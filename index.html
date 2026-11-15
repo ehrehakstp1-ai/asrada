@@ -54,6 +54,7 @@ header .right{display:flex;gap:8px;align-items:center}
 #panel .row{display:flex;gap:8px;margin-top:10px}
 #panel .row button{flex:1;padding:12px;font-size:15px}
 #panel select{width:100%;font:inherit;font-size:15px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
+#panel input[type=checkbox]{width:auto;padding:0;margin:0 6px 0 0;vertical-align:middle;accent-color:var(--accent)}
 #panel input[type=range]{padding:0;accent-color:var(--accent)}
 #testOut{font-size:14px;margin-top:8px;min-height:20px}
 .triprow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
@@ -112,11 +113,15 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <input id="inPitch" type="range" min="0.5" max="1.5" step="0.05" value="0.85">
   <p>속도 <b id="rateVal">1.00</b></p>
   <input id="inRate" type="range" min="0.7" max="1.4" step="0.05" value="1.0">
-  <div class="row"><button id="btnMale">👨 남성 톤</button><button id="btnFemale">👩 여성 톤</button><button id="btnPreview">🔊 미리 듣기</button></div>
+  <div class="row"><button id="btnMale">👨 남성 톤</button><button id="btnFemale">👩 여성 톤</button></div>
+  <div class="row"><button id="btnRobot">🤖 기계음</button><button id="btnPreview">🔊 미리 듣기</button></div>
   <p id="voiceNote"></p>
   <p><b>진짜 남성 음성 설치하기</b><br>
   · 안드로이드: 설정 → '텍스트 음성 변환(TTS)' 검색 → 기본 엔진(Google) 옆 ⚙ → 음성 데이터 설치 → 한국어 → 남성 음성 선택. 크롬은 보통 폰에서 고른 음성을 그대로 씁니다.<br>
   · 아이폰: 설정 → 손쉬운 사용 → 읽기 및 말하기 → 음성 → 한국어 → 남성 음성 다운로드 후, 이 화면을 새로고침하면 목록에 나옵니다.</p>
+  <h2>말투 · 효과음</h2>
+  <select id="inStyle"><option value="normal">기본 (자연스러운 존댓말)</option><option value="machine">기계적 (간결한 보고체)</option></select>
+  <p><label><input type="checkbox" id="optSfx" checked> 효과음: 시작음, 듣기 신호, 처리 중 소리, 응답 신호</label></p>
   <h2>듣기</h2>
   <p>말 끝 대기 <b id="endVal">1.2</b>초: 이만큼 조용하면 말이 끝났다고 보고 보냅니다. 말이 중간에 잘리면 늘리고, 반응이 느리면 줄이세요.</p>
   <input id="inEnd" type="range" min="0.6" max="3" step="0.1" value="1.2">
@@ -240,6 +245,11 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 - 과속, 급가속 경쟁, 위험한 주행을 부추기지 않는다. 안전과 부드러운 주행, 전비 효율을 우선한다.
 - 전기차 코칭 관점: 일찍 감속을 시작해 회생제동에 맡기기, 일정한 속도 유지, 코너에서 부드러운 조향.
 - 대화는 실시간 음성으로 이어진다. 사람과 주고받듯 자연스럽게 한두 문장으로 답하고, 필요하면 짧게 되묻는다. 첫 문장에 핵심을 말한다.`;
+  const STYLE_LINES = {
+    normal: "",
+    machine: "\n- 말투: 차량 AI답게 간결한 보고체. 감탄사·구어체 군더더기 없이 짧은 명사형·단문으로 끊어 말한다. 예: '주인님, 현재 속도 64킬로. 감속 양호. 다음 코너, 조금 일찍 감속 권장합니다.'",
+  };
+  function systemPrompt() { return PERSONA + (STYLE_LINES[store.get("asurada_style", "normal")] || ""); }
   const DEBRIEF = `방금 주행이 끝났다. [상태]의 이번 주행 요약을 바탕으로 음성 디브리핑을 해라.
 3~4문장: 핵심 수치 한두 개, 잘한 점 하나, 다음에 개선할 점 하나. 수치 근거가 약하면 그렇다고 말한다.`;
   const history = [];
@@ -257,7 +267,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
           "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01",
           "anthropic-dangerous-direct-browser-access": "true",
         },
-        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: PERSONA, messages }),
+        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: systemPrompt(), messages }),
       });
       const j = await r.json();
       if (!r.ok) return `두뇌 연결 오류예요. ${j?.error?.message?.slice(0, 80) || r.status}`;
@@ -268,6 +278,33 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       return "지금은 두뇌 연결이 불안정해요. 통신 상태를 확인해 주세요.";
     } finally { clearTimeout(to); }
   }
+
+  // ---------- 효과음 (WebAudio로 직접 합성: 파일 없음) ----------
+  const SFX = (() => {
+    let ac = null, thinkTimer = null;
+    const isOn = () => store.get("asurada_sfx", "1") === "1";
+    function init() { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (_) {} }
+    function tone(freq, t0, dur, o = {}) {
+      if (!ac || !isOn()) return;
+      try {
+        const osc = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + t0, vol = o.vol || 0.05;
+        osc.type = o.type || "square"; osc.frequency.setValueAtTime(freq, t);
+        if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(g); g.connect(ac.destination); osc.start(t); osc.stop(t + dur + 0.02);
+      } catch (_) {}
+    }
+    return {
+      init,
+      boot() { tone(180, 0, 0.45, { type: "sawtooth", vol: 0.035, to: 900 }); [0.5, 0.58, 0.66, 0.74].forEach((d, i) => tone(700 + i * 260, d, 0.05)); tone(1760, 0.86, 0.18, { type: "sine", vol: 0.06 }); },
+      listen() { tone(1300, 0, 0.045, { type: "sine" }); tone(1750, 0.06, 0.06, { type: "sine" }); },
+      ack() { tone(950, 0, 0.035, { vol: 0.03 }); tone(1400, 0.045, 0.03, { vol: 0.03 }); },
+      chirp() { tone(1500, 0, 0.07, { type: "sine", vol: 0.045, to: 2600 }); },
+      alert() { tone(880, 0, 0.09); tone(660, 0.12, 0.09); },
+      thinkStart() { clearInterval(thinkTimer); if (!isOn()) return; thinkTimer = setInterval(() => tone(500 + Math.random() * 1100, 0, 0.022, { vol: 0.016 }), 110); },
+      thinkStop() { clearInterval(thinkTimer); thinkTimer = null; },
+    };
+  })();
 
   // 스트리밍 두뇌: 토큰이 오는 대로 화면에 표시하고, 문장이 끝날 때마다 바로 읽는다
   let curCtrl = null, askSeq = 0;
@@ -289,7 +326,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
           "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01",
           "anthropic-dangerous-direct-browser-access": "true",
         },
-        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: PERSONA, messages, stream: true }),
+        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: systemPrompt(), messages, stream: true }),
       });
       if (!r.ok) {
         let msg = r.status; try { const j = await r.json(); msg = j?.error?.message?.slice(0, 80) || msg; } catch (_) {}
@@ -325,9 +362,11 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     thinking = true; const my = ++askSeq;
     $("heard").textContent = "▶ " + text; $("said").textContent = "생각 중…";
     stopSpeaking(); pauseListening();
+    SFX.thinkStart(); let first = true;
     const reply = await brainStream(text, 250,
       (full) => { if (my === askSeq) $("said").textContent = full; },
-      (sentence) => { if (my === askSeq) speakChunk(sentence); });
+      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.thinkStop(); SFX.chirp(); } speakChunk(sentence); });
+    SFX.thinkStop();
     thinking = false;
     if (T.active) T.log.push(["chat", Date.now() / 1000, text, reply]);
     convoTouch();
@@ -459,6 +498,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
         if (T.active) T.events.push({ kind, g: +hG.toFixed(2), speed: S.speed, t: now / 1000, lat: S.lat, lon: S.lon });
         if ($("optAlert").checked && !speechSynthesis.speaking) {
           const g1 = hG.toFixed(1);
+          SFX.alert();
           say({ hard_brake: `급제동, ${g1}G.`, hard_accel: `급가속, ${g1}G.`, sharp_corner: `코너 횡G ${g1}.` }[kind], true);
         }
       }
@@ -528,7 +568,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function makeRec(continuous) {
     const r = new SR();
     r.lang = "ko-KR"; r.interimResults = true; r.continuous = continuous;
-    r.onstart = () => { if (r !== rec) return; recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
+    r.onstart = () => { if (r !== rec) return; if (recMode === "convo" || recMode === "ptt") SFX.listen(); recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
     r.onresult = (e) => {
       if (r !== rec) return;
       // 결과 전체를 다시 이어 붙인다. 안드로이드는 같은 내용을 누적해서 반복 전달하는 경우가 있어 중복을 걸러낸다.
@@ -559,6 +599,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     clearTimeout(utterTimer); clearTimeout(pttTimer);
     const text = utterBuf.trim(); utterBuf = "";
     if (!text) return;
+    if (recMode !== "wake" || text.replace(/\s/g, "").includes(CFG.wakeWord) || Date.now() < awaitingUntil) SFX.ack();
     handleUtterance(text);
     // 인식기에 쌓인 결과를 비우기 위해 한 번 끊고 다시 시작한다 (onend에서 자동 재시작)
     if (r === rec && recRunning) { try { r.abort(); } catch (_) {} }
@@ -591,7 +632,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function resumeListening() { setTimeout(startListening, 350); }
   function startPTT() {
     if (!SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
-    askSeq++; if (curCtrl) curCtrl.abort();   // 말하는 중이면 끊고 바로 듣기 (끼어들기)
+    askSeq++; if (curCtrl) curCtrl.abort(); SFX.thinkStop();   // 말하는 중이면 끊고 바로 듣기 (끼어들기)
     stopSpeaking();
     clearTimeout(utterTimer); utterBuf = "";
     const old = rec; recMode = "ptt"; rec = makeRec(true); recRunning = false;   // 중간에 쉬어도 끊기지 않게 연속 인식
@@ -646,6 +687,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     } catch (e) { console.warn(e); }
     window.addEventListener("devicemotion", onMotion); // 거부된 경우 이벤트가 오지 않을 뿐 무해
     if (navigator.geolocation) navigator.geolocation.watchPosition(onFix, () => { S.gpsOk = false; sensorsLine(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+    SFX.init(); SFX.boot();
     keepAwake(); setInterval(tick, CFG.tickMs);
     $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnStart").style.display = "none";
     recMode = baseMode();
@@ -663,7 +705,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 설정 패널
   $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL;
-    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; voiceLabels(); renderTrips(); };
+    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); voiceLabels(); renderTrips(); };
   function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); $("endVal").textContent = (+$("inEnd").value).toFixed(1); }
   function applyVoiceInputs() {
     VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value; VOICE.endMs = Math.round(+$("inEnd").value * 1000);
@@ -687,12 +729,19 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     say(kind === "male" ? "아스라다, 남성 톤입니다, 주인님." : "아스라다, 여성 톤입니다, 주인님.");
   }
   $("btnMale").onclick = () => applyPreset("male");
+  $("btnRobot").onclick = () => {
+    $("inPitch").value = 0.7; $("inRate").value = 1.1; $("optSfx").checked = true; $("inStyle").value = "machine";
+    store.set("asurada_sfx", "1"); voiceLabels(); applyVoiceInputs(); SFX.init();
+    $("voiceNote").textContent = "기계음 모드: 낮고 빠른 톤 + 보고체 말투 + 효과음. 저장을 눌러야 유지돼요.";
+    SFX.chirp(); setTimeout(() => say("시스템 확인. 아스라다, 기계 모드로 전환합니다, 주인님."), 120);
+  };
+  $("optSfx").onchange = (e) => { store.set("asurada_sfx", e.target.checked ? "1" : "0"); SFX.init(); SFX.listen(); };
   $("btnFemale").onclick = () => applyPreset("female");
   $("btnPreview").onclick = () => { applyVoiceInputs(); say("아스라다, 온라인. 준비됐습니다, 주인님."); };
   $("btnSave").onclick = () => {
     API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
     store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
-    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs));
+    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value);
     $("panel").hidden = true; sensorsLine(); renderTrip();
   };
   $("btnTest").onclick = async () => {
