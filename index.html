@@ -101,7 +101,8 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <button id="btnTalk" class="talk" disabled>🎙 말하기</button>
   <button id="btnTrip" disabled>주행 시작</button>
   <button id="btnConvo" disabled>💬 대화 모드</button>
-  <button id="btnVision" class="wide" disabled>👁 전방 인식</button>
+  <button id="btnVision" disabled>👁 전방 인식</button>
+  <button id="btnBrief" disabled>🗣 정기 브리핑</button>
   <div class="toggles">
     <label><input type="checkbox" id="optWake"> “아스라다” 호출어</label>
     <label><input type="checkbox" id="optAlert" checked> 이벤트 음성 경고</label>
@@ -134,6 +135,10 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <h2>말투 · 효과음</h2>
   <select id="inStyle"><option value="normal">기본 (자연스러운 존댓말)</option><option value="machine">기계적 (간결한 보고체)</option></select>
   <p><label><input type="checkbox" id="optSfx" checked> 효과음: 시작음, 듣기 신호, 처리 중 소리, 응답 신호</label></p>
+  <h2>정기 브리핑</h2>
+  <select id="inBrief"><option value="30">30초마다</option><option value="60">1분마다</option><option value="120">2분마다</option><option value="300">5분마다</option></select>
+  <p><label><input type="checkbox" id="optBriefCam"> 전방 인식이 켜져 있으면 화면도 보고 브리핑</label></p>
+  <p>대화 중이거나 아스라다가 말하는 중이면 잠깐 미뤘다가 말해요. 1분마다 하면 1시간에 약 60번 Claude를 부르니, 비용을 줄이려면 모델을 claude-haiku-5-5로 바꾸거나 카메라 포함을 끄세요.</p>
   <h2>전방 인식 경고</h2>
   <p><label><input type="checkbox" id="vis_fcw"> 앞차 급접근 · 차간거리</label><br>
      <label><input type="checkbox" id="vis_ped"> 보행자 · 자전거</label><br>
@@ -328,7 +333,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 스트리밍 두뇌: 토큰이 오는 대로 화면에 표시하고, 문장이 끝날 때마다 바로 읽는다
   let curCtrl = null, askSeq = 0;
-  async function brainStream(text, maxTokens, onDelta, onSentence, image) {
+  async function brainStream(text, maxTokens, onDelta, onSentence, image, histText) {
     if (!API_KEY) { const m = "목업 모드예요, 주인님. 설정에서 API 키를 넣어 주세요."; onDelta(m); onSentence(m); return m; }
     const ctx = contextText();
     const userText = `[상태]\n${ctx}\n\n[주인님]\n${text}`;
@@ -370,7 +375,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
         }
       }
       flush(true); full = full.trim();
-      if (full) history.push({ role: "user", content: text }, { role: "assistant", content: full });
+      if (full) history.push({ role: "user", content: histText || text }, { role: "assistant", content: full });
       return full;
     } catch (e) {
       flush(true);
@@ -380,22 +385,58 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   }
 
   const LOOK_RE = /(앞|전방|보여|보이|보니|봐|상황|신호|도로|차선|막혀|밀려|무슨 차|뭐가 있)/;
-  async function ask(text, forceLook = false) {
-    if (thinking || !text) return;
-    const image = VISION.on && (forceLook || LOOK_RE.test(text)) ? grabFrame() : null;
+  let lastUserAt = 0;
+  // 한 번의 '턴': 질문(또는 브리핑 지시) → 스트리밍 답변 → 문장 단위로 읽기
+  async function turn(text, { image = null, maxTokens = 250, label = null, histText = null, quiet = false } = {}) {
+    if (thinking) return null;
     thinking = true; const my = ++askSeq;
-    $("heard").textContent = "▶ " + text; $("said").textContent = "생각 중…";
+    $("heard").textContent = label || ("▶ " + text); $("said").textContent = quiet ? "…" : "생각 중…";
     stopSpeaking(); pauseListening();
-    SFX.thinkStart(); let first = true;
-    const reply = await brainStream(text, 250,
+    if (!quiet) SFX.thinkStart();
+    let first = true;
+    const reply = await brainStream(text, maxTokens,
       (full) => { if (my === askSeq) $("said").textContent = full; },
-      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.thinkStop(); SFX.chirp(); } speakChunk(sentence); }, image);
+      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.thinkStop(); SFX.chirp(); } speakChunk(sentence); }, image, histText);
     SFX.thinkStop();
     thinking = false;
+    if (!ttsPending) resumeListening();
+    return reply;
+  }
+  async function ask(text, forceLook = false) {
+    if (thinking || !text) return;
+    lastUserAt = Date.now() / 1000;
+    const image = VISION.on && (forceLook || LOOK_RE.test(text)) ? grabFrame() : null;
+    const reply = await turn(text, { image });
     if (T.active) T.log.push(["chat", Date.now() / 1000, text, reply]);
     convoTouch();
-    if (!ttsPending) resumeListening();
   }
+
+  // ---------- 정기 브리핑: 설정한 간격마다 아스라다가 먼저 말을 건다 ----------
+  const BRIEF = { on: false, last: 0, evSince: 0 };
+  const briefEvery = () => { const v = +store.get("asurada_brief_s", "60"); return v >= 3 ? v : 60; };
+  const EV_KO = { hard_brake: "급제동", hard_accel: "급가속", sharp_corner: "급코너", fcw: "앞차 급접근", close: "차간거리 가까움", pedestrian: "보행자", lead_departed: "앞차 출발", light_green: "신호 변경" };
+  const BRIEF_PROMPT = `정기 브리핑 시간이다. 주인님이 묻지 않았지만 아스라다가 먼저 말을 건넨다.
+지난 브리핑 이후의 주행(속도, 가감속, 이벤트)과 지금 상황(전방 화면 이미지가 있으면 그것도)을 바탕으로 한두 문장으로 말해라.
+직전 브리핑과 같은 말을 반복하지 말고 변화나 눈에 띄는 점 위주로. 특별한 게 없으면 짧은 상태 보고나 가벼운 한마디면 충분하다. 운전에 방해되지 않게 짧게.`;
+  function setBrief(on) {
+    BRIEF.on = on; BRIEF.last = Date.now() / 1000; BRIEF.evSince = BRIEF.last;
+    $("btnBrief").classList.toggle("recording", on);
+    $("btnBrief").textContent = on ? `🗣 브리핑 중 (${briefEvery()}초)` : "🗣 정기 브리핑";
+    say(on ? `${briefEvery() >= 60 ? briefEvery() / 60 + "분" : briefEvery() + "초"}마다 상황을 알려 드릴게요, 주인님.` : "정기 브리핑을 멈출게요, 주인님.");
+  }
+  setInterval(async () => {
+    if (!BRIEF.on) return;
+    const now = Date.now() / 1000;
+    if (now - BRIEF.last < briefEvery()) return;
+    // 대화 중이거나 말하는 중이면 조금 미룬다
+    if (thinking || ttsPending || utterBuf || now - lastUserAt < 15 || (window.speechSynthesis && speechSynthesis.speaking)) return;
+    BRIEF.last = now;
+    const ev = T.events.filter((e) => e.t > BRIEF.evSince); BRIEF.evSince = now;
+    const evText = ev.length ? "지난 브리핑 이후 이벤트: " + ev.map((e) => EV_KO[e.kind] || e.kind).join(", ") : "지난 브리핑 이후 이벤트 없음";
+    const image = VISION.on && store.get("asurada_brief_cam", "1") === "1" ? grabFrame() : null;
+    const reply = await turn(`${BRIEF_PROMPT}\n${evText}`, { image, maxTokens: 150, label: "🗣 정기 브리핑", histText: "(정기 브리핑 요청)", quiet: true });
+    if (T.active && reply) T.log.push(["brief", now, reply]);
+  }, 2000);
 
   // ---------- 전방 카메라 (폰 안에서 물체 감지 + 물어보면 Claude가 화면을 봄) ----------
   // 라이브러리는 CDN에서 받되, 무결성 해시(SRI)로 파일이 바뀌면 실행되지 않게 막는다 (API 키 보호)
@@ -761,12 +802,22 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     ttsGen++; ttsPending = 0; $("said").classList.remove("speaking");
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
+  function splitSentences(text) {
+    return (text.match(/[^.!?。…\n]+[.!?。…]*[\s\n]*/g) || [text]).map((x) => x.trim()).filter(Boolean);
+  }
   function say(text, isAlert = false) {
     if (!text) return;
     $("said").textContent = text;
     if (!isAlert) stopSpeaking();
-    speakChunk(text);
+    splitSentences(text).forEach((t) => speakChunk(t));
   }
+  // TTS가 끝났다는 신호를 안 보내고 멈추는 경우(안드로이드) 대비: 3초간 실제로 말하지 않으면 상태를 풀어 준다
+  let ttsStall = 0;
+  setInterval(() => {
+    if (!("speechSynthesis" in window) || !ttsPending) { ttsStall = 0; return; }
+    if (!speechSynthesis.speaking && !speechSynthesis.pending) { if (++ttsStall >= 3) { ttsStall = 0; ttsPending = 0; $("said").classList.remove("speaking"); if (!thinking) resumeListening(); } }
+    else ttsStall = 0;
+  }, 1000);
 
   // ---------- 음성 인식 ----------
   // 모드: idle(버튼만) · wake(호출어 대기) · convo(대화 모드: 말 끝나면 바로 다시 들음) · ptt(버튼 눌러 한 번)
@@ -778,7 +829,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     r.lang = "ko-KR"; r.interimResults = true; r.continuous = continuous;
     r.onstart = () => { if (r !== rec) return; if (recMode === "convo" || recMode === "ptt") SFX.listen(); recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
     r.onresult = (e) => {
-      if (r !== rec) return;
+      if (r !== rec || r._dead) return;
       // 결과 전체를 다시 이어 붙인다. 안드로이드는 같은 내용을 누적해서 반복 전달하는 경우가 있어 중복을 걸러낸다.
       let acc = "";
       for (let i = 0; i < e.results.length; i++) {
@@ -795,7 +846,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     r.onerror = (e) => { if (e.error === "not-allowed") { S.micOk = false; sensorsLine(); } };
     r.onend = () => {
       if (r !== rec) return;
-      if (utterBuf.trim()) commitUtterance(r);   // 인식기가 스스로 끝난 경우 남은 말을 넘긴다
+      if (!r._dead && utterBuf.trim()) commitUtterance(r);   // 인식기가 스스로 끝난 경우 남은 말을 넘긴다
       recRunning = false; $("btnTalk").classList.remove("listening"); $("btnConvo").classList.remove("listening");
       if (recMode === "ptt") recMode = baseMode();
       resumeListening();
@@ -805,8 +856,10 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   let utterBuf = "", utterTimer = null, pttTimer = null;
   function commitUtterance(r) {
     clearTimeout(utterTimer); clearTimeout(pttTimer);
+    if (r._dead) { utterBuf = ""; return; }
     const text = utterBuf.trim(); utterBuf = "";
     if (!text) return;
+    r._dead = true; lastUserAt = Date.now() / 1000;
     if (recMode !== "wake" || text.replace(/\s/g, "").includes(CFG.wakeWord) || Date.now() < awaitingUntil) SFX.ack();
     handleUtterance(text);
     // 인식기에 쌓인 결과를 비우기 위해 한 번 끊고 다시 시작한다 (onend에서 자동 재시작)
@@ -818,7 +871,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (recMode === "convo") {
       const clean = text.replace(/[.!?,~]/g, "").trim();
       if (STOP_RE.test(clean)) { setConvo(false); say("대화 모드를 마칠게요, 주인님."); return; }
-      if (clean.length < 2 || thinking) return;
+      if (clean.length < 2 || thinking || ttsPending) return;
       convoTouch();
       ask(text.replace(new RegExp("^\\s*" + CFG.wakeWord + "(야|아)?[\\s,.!?~]*"), "").trim() || text);
       return;
@@ -835,7 +888,10 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     try { rec.start(); } catch (_) {}
   }
   function pauseListening() {
-    if ((recMode === "wake" || recMode === "convo") && rec && recRunning) { try { rec.abort(); } catch (_) {} }
+    if ((recMode === "wake" || recMode === "convo") && rec && !rec._dead) {
+      rec._dead = true; clearTimeout(utterTimer); utterBuf = "";
+      try { rec.abort(); } catch (_) {}
+    }
   }
   function resumeListening() { setTimeout(startListening, 350); }
   function startPTT() {
@@ -897,13 +953,14 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (navigator.geolocation) navigator.geolocation.watchPosition(onFix, () => { S.gpsOk = false; sensorsLine(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     SFX.init(); SFX.boot();
     keepAwake(); setInterval(tick, CFG.tickMs);
-    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnVision").disabled = false; $("btnStart").style.display = "none";
+    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnVision").disabled = false; $("btnBrief").disabled = false; $("btnStart").style.display = "none";
     recMode = baseMode();
     say(API_KEY ? "아스라다, 온라인. 준비됐습니다, 주인님." : "아스라다, 목업 모드로 시작해요. 설정에서 API 키를 넣으면 대화할 수 있어요.");
   };
   $("btnTalk").onclick = startPTT;
   $("btnTrip").onclick = tripToggle;
   $("btnConvo").onclick = () => setConvo(!convo);
+  $("btnBrief").onclick = () => setBrief(!BRIEF.on);
   $("btnVision").onclick = () => (VISION.on ? visionOff() : visionOn());
   $("btnLook").onclick = () => { if (!VISION.on) { say("먼저 전방 인식을 켜 주세요, 주인님."); return; } stopSpeaking(); ask("지금 앞 상황을 짧게 알려줘.", true); };
   ["fcw", "ped", "depart", "light"].forEach((k) => { const el = $("vis_" + k); el.checked = visOpt(k); el.onchange = () => store.set("asurada_vis_" + k, el.checked ? "1" : "0"); });
@@ -916,7 +973,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 설정 패널
   $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL;
-    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); voiceLabels(); renderTrips(); };
+    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); $("inBrief").value = String(briefEvery()); $("optBriefCam").checked = store.get("asurada_brief_cam", "1") === "1"; voiceLabels(); renderTrips(); };
   function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); $("endVal").textContent = (+$("inEnd").value).toFixed(1); }
   function applyVoiceInputs() {
     VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value; VOICE.endMs = Math.round(+$("inEnd").value * 1000);
@@ -952,7 +1009,8 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   $("btnSave").onclick = () => {
     API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
     store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
-    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value);
+    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value); store.set("asurada_brief_s", $("inBrief").value); store.set("asurada_brief_cam", $("optBriefCam").checked ? "1" : "0");
+    if (BRIEF.on) $("btnBrief").textContent = `🗣 브리핑 중 (${briefEvery()}초)`;
     $("panel").hidden = true; sensorsLine(); renderTrip();
   };
   $("btnTest").onclick = async () => {
