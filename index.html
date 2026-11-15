@@ -56,6 +56,12 @@ header .right{display:flex;gap:8px;align-items:center}
 #panel select{width:100%;font:inherit;font-size:15px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 #panel input[type=checkbox]{width:auto;padding:0;margin:0 6px 0 0;vertical-align:middle;accent-color:var(--accent)}
 #panel input[type=range]{padding:0;accent-color:var(--accent)}
+.vision{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px}
+.camwrap{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9}
+#cam,#camBox{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+button.look{position:absolute;right:8px;bottom:8px;padding:8px 12px;font-size:14px;background:rgba(7,9,12,.75)}
+.visstatus{font-size:12px;color:var(--dim);margin-top:6px}
+button.wide{grid-column:span 2}
 #testOut{font-size:14px;margin-top:8px;min-height:20px}
 .triprow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
@@ -78,6 +84,11 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       <div><label>횡 G</label><b id="tg">0.00</b></div>
     </div>
   </section>
+  <section class="vision" id="vision" hidden>
+    <div class="camwrap"><video id="cam" playsinline muted></video><canvas id="camBox"></canvas>
+      <button id="btnLook" class="look">👁 지금 앞 상황</button></div>
+    <div id="visStatus" class="visstatus">-</div>
+  </section>
   <section class="voice">
     <div id="heard" class="heard">…</div>
     <div id="said" class="said">시작 버튼을 눌러 센서와 마이크를 켜세요.</div>
@@ -90,6 +101,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <button id="btnTalk" class="talk" disabled>🎙 말하기</button>
   <button id="btnTrip" disabled>주행 시작</button>
   <button id="btnConvo" disabled>💬 대화 모드</button>
+  <button id="btnVision" class="wide" disabled>👁 전방 인식</button>
   <div class="toggles">
     <label><input type="checkbox" id="optWake"> “아스라다” 호출어</label>
     <label><input type="checkbox" id="optAlert" checked> 이벤트 음성 경고</label>
@@ -122,6 +134,12 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <h2>말투 · 효과음</h2>
   <select id="inStyle"><option value="normal">기본 (자연스러운 존댓말)</option><option value="machine">기계적 (간결한 보고체)</option></select>
   <p><label><input type="checkbox" id="optSfx" checked> 효과음: 시작음, 듣기 신호, 처리 중 소리, 응답 신호</label></p>
+  <h2>전방 인식 경고</h2>
+  <p><label><input type="checkbox" id="vis_fcw"> 앞차 급접근 · 차간거리</label><br>
+     <label><input type="checkbox" id="vis_ped"> 보행자 · 자전거</label><br>
+     <label><input type="checkbox" id="vis_depart"> 정차 중 앞차 출발</label><br>
+     <label><input type="checkbox" id="vis_light"> 정차 중 신호 변경 (초록불)</label></p>
+  <p>폰 카메라와 간단한 인식 모델로 하는 보조 기능이라 놓치거나 잘못 알릴 수 있어요. 차의 안전 기능을 대신하지 않습니다. 영상은 저장하지 않고, "앞 상황" 질문 때만 그 순간 사진 한 장이 Claude로 전송됩니다.</p>
   <h2>듣기</h2>
   <p>말 끝 대기 <b id="endVal">1.2</b>초: 이만큼 조용하면 말이 끝났다고 보고 보냅니다. 말이 중간에 잘리면 늘리고, 반응이 느리면 줄이세요.</p>
   <input id="inEnd" type="range" min="0.6" max="3" step="0.1" value="1.2">
@@ -229,13 +247,15 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
                `최대 감속 ${s.max_brake_g}G, 최대 가속 ${s.max_accel_g}G, 최대 횡G ${s.max_lateral_g}G, 부드러움 ${s.smoothness_pct}%, ` +
                `이벤트 ${JSON.stringify(s.event_counts)}` : "주행 기록 시작 전");
     if (T.events.length) L.push("최근 이벤트: " + T.events.slice(-5).map((e) => `${e.kind}(${e.g}G)`).join(", "));
+    if (VISION.on) L.push(visionSummary());
     return L.join("\n");
   }
 
   // ---------- 두뇌 (구 server/brain.py) ----------
   const PERSONA = `당신은 '아스라다'. 주인님 옆에서 함께 달리는 차량 AI 파트너다.
 차는 볼보 EX90(전기 SUV)이고, 당신은 차량을 직접 제어하지 않는 관찰자이자 코치다.
-센서는 주인님의 스마트폰(GPS, 가속도계)뿐이며, 배터리·타이어 등 차량 내부 데이터는 볼 수 없다.
+센서는 주인님의 스마트폰(GPS, 가속도계, 전방 카메라)뿐이며, 배터리·타이어 등 차량 내부 데이터는 볼 수 없다.
+[상태]에 '전방 인식'이 있으면 폰이 감지한 물체 목록이다. 이미지가 함께 오면 그것이 지금 전방 카메라 화면이다. 보이는 것만 말하고, 확실하지 않으면 그렇다고 말하며, 안전을 단정하지 말고 주의를 환기하는 수준으로 말한다. 차량 자체의 안전 기능을 대신하지 않는다.
 
 말하기 규칙:
 - 답은 음성으로 읽힌다. 주행 중에는 1~2문장, 짧고 또렷하게. 마크다운·이모지·목록 금지.
@@ -308,10 +328,12 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 스트리밍 두뇌: 토큰이 오는 대로 화면에 표시하고, 문장이 끝날 때마다 바로 읽는다
   let curCtrl = null, askSeq = 0;
-  async function brainStream(text, maxTokens, onDelta, onSentence) {
+  async function brainStream(text, maxTokens, onDelta, onSentence, image) {
     if (!API_KEY) { const m = "목업 모드예요, 주인님. 설정에서 API 키를 넣어 주세요."; onDelta(m); onSentence(m); return m; }
     const ctx = contextText();
-    const messages = [...history.slice(-12), { role: "user", content: `[상태]\n${ctx}\n\n[주인님]\n${text}` }];
+    const userText = `[상태]\n${ctx}\n\n[주인님]\n${text}`;
+    const content = image ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } }, { type: "text", text: userText + "\n\n(첨부 이미지: 지금 전방 카메라 화면)" }] : userText;
+    const messages = [...history.slice(-12), { role: "user", content }];
     const ctrl = new AbortController(); curCtrl = ctrl;
     let to = setTimeout(() => ctrl.abort(), 20000), full = "", buf = "";
     const flush = (force) => {
@@ -357,20 +379,206 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     } finally { clearTimeout(to); if (curCtrl === ctrl) curCtrl = null; }
   }
 
-  async function ask(text) {
+  const LOOK_RE = /(앞|전방|보여|보이|보니|봐|상황|신호|도로|차선|막혀|밀려|무슨 차|뭐가 있)/;
+  async function ask(text, forceLook = false) {
     if (thinking || !text) return;
+    const image = VISION.on && (forceLook || LOOK_RE.test(text)) ? grabFrame() : null;
     thinking = true; const my = ++askSeq;
     $("heard").textContent = "▶ " + text; $("said").textContent = "생각 중…";
     stopSpeaking(); pauseListening();
     SFX.thinkStart(); let first = true;
     const reply = await brainStream(text, 250,
       (full) => { if (my === askSeq) $("said").textContent = full; },
-      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.thinkStop(); SFX.chirp(); } speakChunk(sentence); });
+      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.thinkStop(); SFX.chirp(); } speakChunk(sentence); }, image);
     SFX.thinkStop();
     thinking = false;
     if (T.active) T.log.push(["chat", Date.now() / 1000, text, reply]);
     convoTouch();
     if (!ttsPending) resumeListening();
+  }
+
+  // ---------- 전방 카메라 (폰 안에서 물체 감지 + 물어보면 Claude가 화면을 봄) ----------
+  // 라이브러리는 CDN에서 받되, 무결성 해시(SRI)로 파일이 바뀌면 실행되지 않게 막는다 (API 키 보호)
+  const LIBS = [
+    ["https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js", "sha384-vE8hbVJ4lezako5rlvE7bY0BVzWlFhZncPlckrqNwcUQpVtgbENTgZ8TBbnPjZre"],
+    ["https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js", "sha384-7qLdgfEQyO9ZQi9ArRHigK+IBto4XPk468jAqc+fnsXaZIcMAhQeLwzggRK7aESl"],
+  ];
+  const VEH = new Set(["car", "truck", "bus", "motorcycle"]), VRU = new Set(["person", "bicycle"]);
+  const KO = { car: "승용차", truck: "트럭", bus: "버스", motorcycle: "오토바이", person: "보행자", bicycle: "자전거", "traffic light": "신호등", "stop sign": "정지 표지" };
+  const VISION = { on: false, model: null, stream: null, busy: false, timer: null, dets: [], lead: null, leadHist: [],
+                   stopSince: 0, light: null, lightPrev: null, cool: {}, fps: 0, lastT: 0, W: 0, H: 0 };
+
+  function loadScript([src, integrity]) {
+    return new Promise((res, rej) => {
+      const el = document.createElement("script");
+      el.src = src; el.integrity = integrity; el.crossOrigin = "anonymous";
+      el.onload = res; el.onerror = () => rej(new Error("load " + src)); document.head.appendChild(el);
+    });
+  }
+  async function loadDetector() {
+    if (window.__fakeDetector) return window.__fakeDetector; // 테스트용
+    for (const l of LIBS) await loadScript(l);
+    return await window.cocoSsd.load({ base: "lite_mobilenet_v2" });
+  }
+  const visOpt = (k) => store.get("asurada_vis_" + k, "1") === "1";
+
+  async function visionOn() {
+    $("visStatus").textContent = "카메라 켜는 중…"; $("vision").hidden = false;
+    try {
+      VISION.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      const v = $("cam"); v.srcObject = VISION.stream; await v.play();
+    } catch (e) { $("visStatus").textContent = "카메라를 켤 수 없어요: " + (e.name || e); $("btnVision").classList.remove("recording"); return; }
+    VISION.on = true; $("btnVision").classList.add("recording"); $("btnVision").textContent = "👁 전방 인식 끄기";
+    if (!VISION.model) {
+      $("visStatus").textContent = "인식 모델 받는 중… (처음 한 번, 약 5MB)";
+      try { VISION.model = await loadDetector(); }
+      catch (e) { $("visStatus").textContent = "인식 모델을 못 받았어요. 화면 묻기만 가능합니다."; console.warn(e); return; }
+    }
+    $("visStatus").textContent = "전방 인식 중"; visionLoop();
+  }
+  function visionOff() {
+    VISION.on = false; clearTimeout(VISION.timer);
+    if (VISION.stream) VISION.stream.getTracks().forEach((t) => t.stop());
+    VISION.stream = null; VISION.dets = []; VISION.lead = null; VISION.leadHist = [];
+    $("vision").hidden = true; $("btnVision").classList.remove("recording"); $("btnVision").textContent = "👁 전방 인식";
+    const c = $("camBox"); c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  }
+
+  async function visionLoop() {
+    if (!VISION.on || !VISION.model) return;
+    const v = $("cam");
+    if (!VISION.busy && v.readyState >= 2) {
+      VISION.busy = true;
+      try {
+        VISION.W = v.videoWidth; VISION.H = v.videoHeight;
+        const dets = await VISION.model.detect(v, 20, 0.45);
+        const now = performance.now(); VISION.fps = VISION.lastT ? 1000 / (now - VISION.lastT) : 0; VISION.lastT = now;
+        analyze(dets, now / 1000);
+        drawBoxes();
+      } catch (e) { console.warn(e); }
+      VISION.busy = false;
+    }
+    VISION.timer = setTimeout(visionLoop, 250); // 약 4fps: 배터리·발열 절약
+  }
+
+  function visAlert(key, text, coolS) {
+    const now = Date.now() / 1000;
+    if ((VISION.cool[key] || 0) > now) return;
+    VISION.cool[key] = now + coolS;
+    if (T.active) T.events.push({ kind: key, g: 0, speed: S.speed, t: now, lat: S.lat, lon: S.lon });
+    if ($("optAlert").checked && !thinking) { SFX.alert(); say(text, true); }
+  }
+
+  function analyze(raw, t) {
+    const W = VISION.W || 1, H = VISION.H || 1;
+    const dets = raw.map((d) => {
+      const [x, y, w, h] = d.bbox;
+      return { cls: d.class, score: d.score, x: x / W, y: y / H, w: w / W, h: h / H, cx: (x + w / 2) / W, by: (y + h) / H, bbox: d.bbox };
+    });
+    VISION.dets = dets;
+    const v = S.speed || 0;
+
+    // 1) 앞차: 화면 가운데에 있는 가장 큰 차량
+    const lead = dets.filter((d) => VEH.has(d.cls) && d.cx > 0.3 && d.cx < 0.7 && d.by > 0.4).sort((a, b) => b.w - a.w)[0] || null;
+    VISION.lead = lead;
+    if (lead) VISION.leadHist.push([t, lead.w]); else VISION.leadHist = [];
+    VISION.leadHist = VISION.leadHist.filter(([tt]) => t - tt <= 1.5);
+
+    // 앞차 급접근: 박스 폭이 커지는 속도로 충돌까지 남은 시간(TTC)을 추정
+    let ttc = null;
+    const hst = VISION.leadHist;
+    if (hst.length >= 4) {
+      const n = hst.length, mt = hst.reduce((a, [tt]) => a + tt, 0) / n, mw = hst.reduce((a, [, w]) => a + w, 0) / n;
+      let num = 0, den = 0; hst.forEach(([tt, w]) => { num += (tt - mt) * (w - mw); den += (tt - mt) ** 2; });
+      const slope = den ? num / den : 0;
+      if (slope > 0.005) ttc = hst[n - 1][1] / slope;
+    }
+    VISION.ttc = ttc;
+    if (visOpt("fcw") && lead && v > 4 && ttc !== null && ttc < 2.2 && lead.w > 0.12) visAlert("fcw", "앞차 급접근, 주의.", 6);
+    else if (visOpt("fcw") && lead && v > 8 && lead.w > 0.5 && (VISION.cool.fcw || 0) < Date.now() / 1000) visAlert("close", "앞차와 거리가 가까워요.", 20);
+
+    // 2) 보행자·자전거: 가운데, 가까이(박스가 큼), 주행 중
+    const vru = dets.find((d) => VRU.has(d.cls) && d.cx > 0.25 && d.cx < 0.75 && d.h > 0.25);
+    if (visOpt("ped") && vru && v > 2) visAlert("pedestrian", `전방 ${KO[vru.cls]} 주의.`, 8);
+
+    // 3) 정차 중 앞차 출발: 3초 이상 정지 + 앞차 박스가 2초 사이 15% 이상 작아짐
+    if (v < 0.5) { if (!VISION.stopSince) VISION.stopSince = t; } else VISION.stopSince = 0;
+    const stopped = VISION.stopSince && t - VISION.stopSince > 3;
+    if (lead) {
+      VISION.leadW2 = (VISION.leadW2 || []).filter(([tt]) => t - tt <= 2.2); VISION.leadW2.push([t, lead.w]);
+      const old = VISION.leadW2[0];
+      if (visOpt("depart") && stopped && old && t - old[0] > 1.5 && lead.w < old[1] * 0.85 && old[1] > 0.12) visAlert("lead_departed", "앞차가 출발했어요, 주인님.", 15);
+    } else VISION.leadW2 = [];
+
+    // 4) 신호등 색: 화면 위쪽의 가장 큰 신호등에서 켜진 불빛 색을 셈
+    const tl = dets.filter((d) => d.cls === "traffic light" && d.y < 0.6).sort((a, b) => b.w * b.h - a.w * a.h)[0];
+    const color = tl ? lightColor(tl.bbox) : null;
+    if (color) {
+      if (visOpt("light") && stopped && VISION.light === "red" && color === "green") visAlert("light_green", "신호 바뀌었어요.", 15);
+      VISION.light = color;
+    }
+    VISION.lightNow = color;
+  }
+
+  const probe = document.createElement("canvas"), pctx = probe.getContext("2d", { willReadFrequently: true });
+  function lightColor([x, y, w, h]) {
+    try {
+      const v = $("cam"), sw = Math.max(4, Math.round(w)), sh = Math.max(4, Math.round(h));
+      probe.width = Math.min(64, sw); probe.height = Math.min(64, sh);
+      pctx.drawImage(v, x, y, w, h, 0, 0, probe.width, probe.height);
+      const d = pctx.getImageData(0, 0, probe.width, probe.height).data;
+      let r = 0, g = 0, yl = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const R = d[i], G = d[i + 1], B = d[i + 2], mx = Math.max(R, G, B);
+        if (mx < 170) continue; // 켜진(밝은) 픽셀만
+        if (R > 180 && G < 110 && B < 110) r++;
+        else if (R > 190 && G > 140 && B < 100) yl++;
+        else if (G > 170 && R < 140) g++;
+      }
+      const n = probe.width * probe.height * 0.02;
+      const best = Math.max(r, g, yl);
+      if (best < Math.max(3, n)) return null;
+      return best === r ? "red" : best === g ? "green" : "yellow";
+    } catch (_) { return null; }
+  }
+
+  function drawBoxes() {
+    const c = $("camBox"), v = $("cam");
+    c.width = c.clientWidth * (window.devicePixelRatio || 1); c.height = c.clientHeight * (window.devicePixelRatio || 1);
+    const ctx = c.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height);
+    // object-fit: cover 보정
+    const vw = v.videoWidth || 1, vh = v.videoHeight || 1, sc = Math.max(c.width / vw, c.height / vh);
+    const ox = (c.width - vw * sc) / 2, oy = (c.height - vh * sc) / 2;
+    ctx.lineWidth = 3 * (window.devicePixelRatio || 1); ctx.font = `${12 * (window.devicePixelRatio || 1)}px sans-serif`;
+    VISION.dets.forEach((d) => {
+      const [x, y, w, h] = d.bbox, isLead = VISION.lead && d.bbox === VISION.lead.bbox;
+      ctx.strokeStyle = isLead ? "#ff3b3b" : VRU.has(d.cls) ? "#ffb020" : "#3ddc97";
+      ctx.strokeRect(ox + x * sc, oy + y * sc, w * sc, h * sc);
+      ctx.fillStyle = ctx.strokeStyle; ctx.fillText((KO[d.cls] || d.cls) + (isLead ? " (앞차)" : ""), ox + x * sc + 4, oy + y * sc - 4);
+    });
+    const lt = { red: "빨간불", green: "초록불", yellow: "노란불" }[VISION.lightNow] || "-";
+    $("visStatus").textContent = `전방 인식 중 · ${VISION.fps.toFixed(1)}fps · 물체 ${VISION.dets.length} · 신호 ${lt}` +
+      (VISION.ttc ? ` · 앞차 TTC ${VISION.ttc.toFixed(1)}s` : "");
+  }
+
+  function visionSummary() {
+    if (!VISION.model) return "전방 인식: 카메라만 켜짐 (물체 감지 모델 없음)";
+    const cnt = {}; VISION.dets.forEach((d) => { const k = KO[d.cls] || d.cls; cnt[k] = (cnt[k] || 0) + 1; });
+    const parts = Object.entries(cnt).map(([k, n]) => `${k} ${n}`).join(", ") || "감지된 물체 없음";
+    const lead = VISION.lead ? `, 앞차 있음(화면 폭 ${Math.round(VISION.lead.w * 100)}%${VISION.ttc ? `, 접근 중 TTC 약 ${VISION.ttc.toFixed(1)}초` : ""})` : ", 바로 앞차 없음";
+    const lt = { red: "빨간불", green: "초록불", yellow: "노란불" }[VISION.lightNow];
+    return `전방 인식: ${parts}${lead}${lt ? `, 신호등 ${lt}` : ""}`;
+  }
+
+  const grabCanvas = document.createElement("canvas");
+  function grabFrame() {
+    try {
+      const v = $("cam"); if (!v.videoWidth) return null;
+      const sc = Math.min(1, 768 / v.videoWidth);
+      grabCanvas.width = Math.round(v.videoWidth * sc); grabCanvas.height = Math.round(v.videoHeight * sc);
+      grabCanvas.getContext("2d").drawImage(v, 0, 0, grabCanvas.width, grabCanvas.height);
+      return grabCanvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+    } catch (_) { return null; }
   }
 
   // ---------- 저장소 (IndexedDB) ----------
@@ -689,13 +897,16 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (navigator.geolocation) navigator.geolocation.watchPosition(onFix, () => { S.gpsOk = false; sensorsLine(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     SFX.init(); SFX.boot();
     keepAwake(); setInterval(tick, CFG.tickMs);
-    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnStart").style.display = "none";
+    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnVision").disabled = false; $("btnStart").style.display = "none";
     recMode = baseMode();
     say(API_KEY ? "아스라다, 온라인. 준비됐습니다, 주인님." : "아스라다, 목업 모드로 시작해요. 설정에서 API 키를 넣으면 대화할 수 있어요.");
   };
   $("btnTalk").onclick = startPTT;
   $("btnTrip").onclick = tripToggle;
   $("btnConvo").onclick = () => setConvo(!convo);
+  $("btnVision").onclick = () => (VISION.on ? visionOff() : visionOn());
+  $("btnLook").onclick = () => { if (!VISION.on) { say("먼저 전방 인식을 켜 주세요, 주인님."); return; } stopSpeaking(); ask("지금 앞 상황을 짧게 알려줘.", true); };
+  ["fcw", "ped", "depart", "light"].forEach((k) => { const el = $("vis_" + k); el.checked = visOpt(k); el.onchange = () => store.set("asurada_vis_" + k, el.checked ? "1" : "0"); });
   $("optWake").onchange = () => {
     if (convo) return;
     const old = rec; rec = null; recRunning = false;
