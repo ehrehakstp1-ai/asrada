@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07090c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ASURADA</title>
+<style>
+:root{
+  --bg:#07090c; --panel:#0f1419; --line:#1e2730; --txt:#e6edf3; --dim:#7d8a96;
+  --accent:#ff3b3b; --ok:#3ddc97; --warn:#ffb020;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+body{display:flex;flex-direction:column;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom)}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 0}
+.brand{font-weight:800;letter-spacing:.25em;font-size:18px}
+.brand span{color:var(--accent);margin-left:.4em;font-weight:600}
+.pill{font-size:11px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);letter-spacing:.1em}
+.pill.on{color:var(--ok);border-color:var(--ok)} .pill.off{color:var(--dim)}
+main{flex:1;display:flex;flex-direction:column;gap:12px}
+.hud{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;
+  display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:8px;align-items:center}
+.speed{font-size:72px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.speed small{font-size:16px;color:var(--dim);margin-left:6px;font-weight:500}
+#gg{grid-row:span 2;width:150px;height:150px}
+.gvals{display:flex;gap:16px}
+.gvals label{display:block;font-size:11px;color:var(--dim)}
+.gvals b{font-size:20px;font-variant-numeric:tabular-nums}
+.voice{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;min-height:120px}
+.heard{color:var(--dim);font-size:14px;min-height:20px}
+.said{font-size:20px;line-height:1.45;margin-top:8px}
+.said.speaking{color:#fff;text-shadow:0 0 12px rgba(255,59,59,.5)}
+.trip{font-size:13px;color:var(--dim);line-height:1.6;padding:0 4px}
+footer{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0}
+button{font:inherit;font-size:17px;padding:16px;border-radius:14px;border:1px solid var(--line);
+  background:var(--panel);color:var(--txt)}
+button:disabled{opacity:.35}
+button.primary{grid-column:span 2;background:var(--accent);border-color:var(--accent);font-weight:700}
+button.talk{grid-column:span 2;font-size:22px;padding:22px}
+button.talk.listening{background:var(--accent);border-color:var(--accent)}
+button.recording{border-color:var(--ok);color:var(--ok)}
+.toggles{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--dim);justify-content:center}
+.sensors{grid-column:span 2;font-size:11px;color:var(--dim);text-align:center}
+header .right{display:flex;gap:8px;align-items:center}
+.gear{padding:6px 12px;font-size:14px;border-radius:99px}
+#panel{position:fixed;inset:0;background:rgba(7,9,12,.97);padding:calc(env(safe-area-inset-top) + 16px) 16px 24px;overflow:auto;z-index:10}
+#panel h2{font-size:16px;letter-spacing:.1em;margin:18px 0 8px}
+#panel input{width:100%;font:inherit;font-size:15px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
+#panel p{font-size:12px;color:var(--dim);line-height:1.6;margin:6px 0}
+#panel .row{display:flex;gap:8px;margin-top:10px}
+#panel .row button{flex:1;padding:12px;font-size:15px}
+#testOut{font-size:14px;margin-top:8px;min-height:20px}
+.triprow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
+
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">ASURADA<span>LITE</span></div>
+  <div class="right"><button id="btnSettings" class="gear">⚙ 설정</button></div>
+</header>
+
+<main>
+  <section class="hud">
+    <div class="speed"><span id="speed">--</span><small>km/h</small></div>
+    <canvas id="gg" width="220" height="220" aria-label="G-G 다이어그램"></canvas>
+    <div class="gvals">
+      <div><label>수평 G</label><b id="hg">0.00</b></div>
+      <div><label>종 G</label><b id="lg">0.00</b></div>
+      <div><label>횡 G</label><b id="tg">0.00</b></div>
+    </div>
+  </section>
+  <section class="voice">
+    <div id="heard" class="heard">…</div>
+    <div id="said" class="said">시작 버튼을 눌러 센서와 마이크를 켜세요.</div>
+  </section>
+  <section class="trip" id="trip">주행 기록 없음</section>
+</main>
+
+<footer>
+  <button id="btnStart" class="primary">시작</button>
+  <button id="btnTalk" class="talk" disabled>🎙 말하기</button>
+  <button id="btnTrip" disabled>주행 시작</button>
+  <div class="toggles">
+    <label><input type="checkbox" id="optWake"> “아스라다” 호출어</label>
+    <label><input type="checkbox" id="optAlert" checked> 이벤트 음성 경고</label>
+  </div>
+  <div id="sensors" class="sensors"></div>
+</footer>
+
+<div id="panel" hidden>
+  <div class="brand">SETTINGS</div>
+  <h2>Claude API 키</h2>
+  <input id="inKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+  <p>키는 이 폰의 브라우저에만 저장되고, Anthropic 서버로만 전송됩니다. 아스라다 전용 키를 새로 만들고 콘솔에서 월 사용 한도를 걸어 두세요.</p>
+  <h2>모델</h2>
+  <input id="inModel" placeholder="claude-sonnet-5-5">
+  <div class="row"><button id="btnTest">연결 테스트</button><button id="btnSave" class="primary">저장</button></div>
+  <div id="testOut"></div>
+  <h2>주행 기록</h2>
+  <p>기록은 이 폰 안에만 저장됩니다. JSON으로 내려받아 분석할 수 있어요.</p>
+  <div id="tripList"></div>
+  <div class="row"><button onclick="document.getElementById('panel').hidden=true">닫기</button></div>
+</div>
+
+<script>
+/* Asurada Lite — 서버 없는 폰 단독 버전
+ * 센서: Geolocation + DeviceMotion / 음성: Web Speech API
+ * 두뇌: 폰이 Claude API를 직접 호출 (API 키는 이 폰의 브라우저에만 저장)
+ * 로그: IndexedDB (폰 안), JSON 내보내기 가능
+ */
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const G = 9.80665;
+
+  const CFG = {
+    tickMs: 200, eventG: 0.35, eventHoldWindows: 2, eventCooldownMs: 6000,
+    gravityAlpha: 0.97, wakeWord: "아스라다",
+  };
+
+  // ---------- 설정 (이 브라우저에만 저장) ----------
+  const store = {
+    get(k, d = "") { try { return localStorage.getItem(k) ?? d; } catch (_) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
+  let API_KEY = store.get("asurada_api_key");
+  let MODEL = store.get("asurada_model", "claude-sonnet-5-5");
+
+  // ---------- 센서 상태 ----------
+  const S = {
+    lat: null, lon: null, speed: null, heading: null, lonG: 0, latG: 0,
+    peakHG: 0, curHG: 0, gravity: null, lastFix: null,
+    holdCount: 0, lastEventAt: 0, trail: [],
+    gpsOk: false, imuOk: false, micOk: false,
+  };
+
+  // ---------- 주행 상태 (구 server/state.py) ----------
+  const T = { active: false, recent: [] };
+  function tripReset() {
+    Object.assign(T, {
+      id: null, active: false, startedAt: null, endedAt: null, distanceM: 0, movingS: 0,
+      maxSpeed: 0, maxBrake: 0, maxAccel: 0, maxLat: 0, smooth: 0, total: 0,
+      events: [], log: [], last: null, lastLogAt: 0, logPeak: 0, recent: T.recent || [],
+    });
+  }
+  tripReset();
+
+  function addSample(s) {
+    T.recent.push(s); if (T.recent.length > 600) T.recent.shift();
+    if (!T.active) { T.last = s; return; }
+    T.total++; if (s.h_g < 0.2) T.smooth++;
+    T.maxLat = Math.max(T.maxLat, s.lat_g);
+    if (s.lon_g < 0) T.maxBrake = Math.max(T.maxBrake, -s.lon_g); else T.maxAccel = Math.max(T.maxAccel, s.lon_g);
+    if (s.speed != null) T.maxSpeed = Math.max(T.maxSpeed, s.speed);
+    const l = T.last;
+    if (l && l.lat != null && s.lat != null) {
+      const d = dist(l.lat, l.lon, s.lat, s.lon), dt = s.t - l.t;
+      if (dt > 0 && dt < 10 && d / dt < 70) { T.distanceM += d; if ((s.speed || 0) > 1) T.movingS += dt; }
+    }
+    T.last = s;
+    // 로그는 1Hz로 다운샘플 (구간 최대 G 유지)
+    T.logPeak = Math.max(T.logPeak, s.h_g);
+    if (s.t - T.lastLogAt >= 1) {
+      T.log.push([+s.t.toFixed(1), s.lat, s.lon, s.speed == null ? null : +s.speed.toFixed(2),
+                  +T.logPeak.toFixed(3), +s.lon_g.toFixed(3), +s.lat_g.toFixed(3)]);
+      T.lastLogAt = s.t; T.logPeak = 0;
+    }
+  }
+
+  function summary() {
+    if (!T.startedAt) return null;
+    const end = T.endedAt || Date.now() / 1000, counts = {};
+    T.events.forEach((e) => (counts[e.kind] = (counts[e.kind] || 0) + 1));
+    return {
+      active: T.active,
+      duration_min: +((end - T.startedAt) / 60).toFixed(1),
+      distance_km: +(T.distanceM / 1000).toFixed(2),
+      avg_moving_speed_kmh: T.movingS > 0 ? +(T.distanceM / T.movingS * 3.6).toFixed(1) : null,
+      max_speed_kmh: +(T.maxSpeed * 3.6).toFixed(1),
+      max_brake_g: +T.maxBrake.toFixed(2), max_accel_g: +T.maxAccel.toFixed(2),
+      max_lateral_g: +T.maxLat.toFixed(2),
+      smoothness_pct: T.total ? Math.round(T.smooth / T.total * 100) : null,
+      event_counts: counts,
+    };
+  }
+
+  function contextText() {
+    const L = [], cur = T.recent[T.recent.length - 1], now = Date.now() / 1000;
+    L.push(cur ? `현재 속도: ${cur.speed == null ? "알 수 없음" : Math.round(cur.speed * 3.6) + " km/h"}, 현재 수평 G: ${cur.h_g.toFixed(2)}`
+               : "센서 데이터 없음");
+    const w = T.recent.filter((s) => now - s.t <= 60);
+    if (w.length) {
+      const sp = w.filter((s) => s.speed != null).map((s) => s.speed);
+      const avg = sp.length ? (sp.reduce((a, b) => a + b, 0) / sp.length * 3.6).toFixed(0) : "?";
+      const mb = Math.max(0, ...w.map((s) => -s.lon_g)).toFixed(2), ml = Math.max(...w.map((s) => s.lat_g)).toFixed(2);
+      L.push(`최근 60초: 평균 ${avg} km/h, 최대 감속 ${mb}G, 최대 횡G ${ml}G`);
+    }
+    const s = summary();
+    L.push(s ? `이번 주행: ${s.active ? "진행 중" : "종료"}, ${s.duration_min}분, ${s.distance_km}km, 최고 ${s.max_speed_kmh}km/h, ` +
+               `최대 감속 ${s.max_brake_g}G, 최대 가속 ${s.max_accel_g}G, 최대 횡G ${s.max_lateral_g}G, 부드러움 ${s.smoothness_pct}%, ` +
+               `이벤트 ${JSON.stringify(s.event_counts)}` : "주행 기록 시작 전");
+    if (T.events.length) L.push("최근 이벤트: " + T.events.slice(-5).map((e) => `${e.kind}(${e.g}G)`).join(", "));
+    return L.join("\n");
+  }
+
+  // ---------- 두뇌 (구 server/brain.py) ----------
+  const PERSONA = `당신은 '아스라다'. 드라이버 옆에서 함께 달리는 차량 AI 파트너다.
+차는 볼보 EX90(전기 SUV)이고, 당신은 차량을 직접 제어하지 않는 관찰자이자 코치다.
+센서는 드라이버의 스마트폰(GPS, 가속도계)뿐이며, 배터리·타이어 등 차량 내부 데이터는 볼 수 없다.
+
+말하기 규칙:
+- 답은 음성으로 읽힌다. 주행 중에는 1~2문장, 짧고 또렷하게. 마크다운·이모지·목록 금지.
+- 숫자는 반올림해서 말한다 (예: 0.42G → 0.4G, 63.7km/h → 64킬로).
+- 드라이버를 '드라이버'라고 부른다. 침착하고 신뢰감 있는 말투, 가끔 짧은 격려.
+- 제공된 [상태] 데이터에 없는 것은 추측하지 말고 모른다고 말한다.
+- 과속, 급가속 경쟁, 위험한 주행을 부추기지 않는다. 안전과 부드러운 주행, 전비 효율을 우선한다.
+- 전기차 코칭 관점: 일찍 감속을 시작해 회생제동에 맡기기, 일정한 속도 유지, 코너에서 부드러운 조향.`;
+  const DEBRIEF = `방금 주행이 끝났다. [상태]의 이번 주행 요약을 바탕으로 음성 디브리핑을 해라.
+3~4문장: 핵심 수치 한두 개, 잘한 점 하나, 다음에 개선할 점 하나. 수치 근거가 약하면 그렇다고 말한다.`;
+  const history = [];
+  let thinking = false;
+
+  async function brainAsk(text, maxTokens = 250) {
+    const ctx = contextText();
+    if (!API_KEY) return "목업 모드예요, 드라이버. 설정에서 API 키를 넣어 주세요. " + ctx.split("\n")[0] + ".";
+    const messages = [...history.slice(-12), { role: "user", content: `[상태]\n${ctx}\n\n[드라이버]\n${text}` }];
+    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", signal: ctrl.signal,
+        headers: {
+          "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: PERSONA, messages }),
+      });
+      const j = await r.json();
+      if (!r.ok) return `두뇌 연결 오류예요. ${j?.error?.message?.slice(0, 80) || r.status}`;
+      const reply = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+      history.push({ role: "user", content: text }, { role: "assistant", content: reply });
+      return reply;
+    } catch (e) {
+      return "지금은 두뇌 연결이 불안정해요. 통신 상태를 확인해 주세요.";
+    } finally { clearTimeout(to); }
+  }
+
+  async function ask(text) {
+    if (thinking) return;
+    thinking = true; $("heard").textContent = "▶ " + text; $("said").textContent = "생각 중…";
+    const reply = await brainAsk(text);
+    thinking = false;
+    if (T.active) T.log.push(["chat", Date.now() / 1000, text, reply]);
+    say(reply);
+  }
+
+  // ---------- 저장소 (IndexedDB) ----------
+  let dbp = null;
+  function db() {
+    if (!dbp) dbp = new Promise((res, rej) => {
+      const r = indexedDB.open("asurada", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("trips", { keyPath: "id" });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function saveTrip(extra = {}) {
+    try {
+      const d = await db();
+      const rec = { id: T.id, startedAt: T.startedAt, endedAt: T.endedAt, summary: summary(), events: T.events,
+                    log_fields: ["t", "lat", "lon", "speed_mps", "h_g", "lon_g", "lat_g"], log: T.log, ...extra };
+      await new Promise((res, rej) => { const tx = d.transaction("trips", "readwrite"); tx.objectStore("trips").put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+    } catch (e) { console.warn("saveTrip", e); }
+  }
+  async function listTrips() {
+    try {
+      const d = await db();
+      return await new Promise((res) => { const q = d.transaction("trips").objectStore("trips").getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); });
+    } catch (_) { return []; }
+  }
+  async function renderTrips() {
+    const trips = (await listTrips()).sort((a, b) => b.startedAt - a.startedAt);
+    const box = $("tripList"); box.innerHTML = "";
+    if (!trips.length) { box.textContent = "저장된 주행이 없어요."; return; }
+    trips.slice(0, 20).forEach((t) => {
+      const s = t.summary || {}, row = document.createElement("div"); row.className = "triprow";
+      const dt = new Date(t.startedAt * 1000);
+      row.innerHTML = `<span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${s.distance_km ?? 0}km · ${s.duration_min ?? 0}분</span>`;
+      const b = document.createElement("button"); b.textContent = "JSON"; b.className = "mini";
+      b.onclick = () => {
+        const url = URL.createObjectURL(new Blob([JSON.stringify(t)], { type: "application/json" }));
+        const a = document.createElement("a"); a.href = url; a.download = `asurada-${t.id}.json`; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      };
+      row.appendChild(b); box.appendChild(row);
+    });
+  }
+
+  // ---------- 주행 시작/종료 ----------
+  let autosave = null;
+  async function tripToggle() {
+    if (!T.active) {
+      tripReset(); T.active = true; T.startedAt = Date.now() / 1000;
+      T.id = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
+      history.length = 0;
+      autosave = setInterval(() => saveTrip(), 30000); // 앱이 꺼져도 30초 단위로 남김
+      say("주행 기록 시작합니다. 안전 운전해요.");
+    } else {
+      T.active = false; T.endedAt = Date.now() / 1000; clearInterval(autosave);
+      await saveTrip();
+      $("said").textContent = "디브리핑 준비 중…";
+      const reply = await brainAsk(DEBRIEF, 400);
+      await saveTrip({ debrief: reply });
+      say(reply); renderTrips();
+    }
+    renderTrip();
+  }
+
+  // ---------- GPS ----------
+  function bearing(lat1, lon1, lat2, lon2) {
+    const r = Math.PI / 180, y = Math.sin((lon2 - lon1) * r) * Math.cos(lat2 * r);
+    const x = Math.cos(lat1 * r) * Math.sin(lat2 * r) - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lon2 - lon1) * r);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+  function dist(lat1, lon1, lat2, lon2) {
+    const r = Math.PI / 180, R = 6371000;
+    const a = Math.sin((lat2 - lat1) * r / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  function onFix(p) {
+    const c = p.coords, t = p.timestamp / 1000, prev = S.lastFix;
+    let speed = c.speed != null && !Number.isNaN(c.speed) ? c.speed : null;
+    let heading = c.heading != null && !Number.isNaN(c.heading) ? c.heading : null;
+    if (prev) {
+      const dt = t - prev.t;
+      if (dt > 0.2 && dt < 5) {
+        const d = dist(prev.lat, prev.lon, c.latitude, c.longitude);
+        if (speed === null) speed = d / dt;
+        if (heading === null && d > 2) heading = bearing(prev.lat, prev.lon, c.latitude, c.longitude);
+        if (prev.speed != null && speed != null) S.lonG = 0.5 * S.lonG + 0.5 * clamp((speed - prev.speed) / dt / G, -1.5, 1.5);
+        if (speed != null && speed > 3 && heading != null && prev.heading != null) {
+          let dh = heading - prev.heading; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
+          S.latG = 0.5 * S.latG + 0.5 * clamp(speed * (dh * Math.PI / 180) / dt / G, -1.5, 1.5);
+        } else S.latG *= 0.5;
+      }
+    }
+    Object.assign(S, { lat: c.latitude, lon: c.longitude, speed, heading, gpsOk: true });
+    S.lastFix = { t, lat: c.latitude, lon: c.longitude, speed, heading };
+    sensorsLine();
+    $("speed").textContent = speed === null ? "--" : Math.round(speed * 3.6);
+  }
+
+  // ---------- IMU ----------
+  function onMotion(e) {
+    const a = e.accelerationIncludingGravity;
+    if (!a || a.x === null) return;
+    const v = [a.x, a.y, a.z];
+    if (!S.gravity) S.gravity = v.slice();
+    for (let i = 0; i < 3; i++) S.gravity[i] = CFG.gravityAlpha * S.gravity[i] + (1 - CFG.gravityAlpha) * v[i];
+    const gm = Math.hypot(...S.gravity) || 1, gu = S.gravity.map((x) => x / gm);
+    const lin = v.map((x, i) => x - S.gravity[i]);
+    const dot = lin[0] * gu[0] + lin[1] * gu[1] + lin[2] * gu[2];
+    const hG = Math.hypot(...lin.map((x, i) => x - dot * gu[i])) / G; // 수평면 성분만 → 거치 방향 무관
+    S.curHG = hG; if (hG > S.peakHG) S.peakHG = hG;
+    if (!S.imuOk) { S.imuOk = true; sensorsLine(); }
+  }
+
+  // ---------- 주기 처리 ----------
+  function tick() {
+    const hG = S.peakHG; S.peakHG = 0;
+    addSample({ t: Date.now() / 1000, lat: S.lat, lon: S.lon, speed: S.speed, h_g: hG, lon_g: S.lonG, lat_g: Math.abs(S.latG) });
+    if (hG >= CFG.eventG && (S.speed || 0) > 1.4) S.holdCount++; else S.holdCount = 0;
+    const now = Date.now();
+    if (S.holdCount >= CFG.eventHoldWindows && now - S.lastEventAt > CFG.eventCooldownMs) {
+      let kind = null;
+      if (S.lonG < -0.15) kind = "hard_brake"; else if (S.lonG > 0.15) kind = "hard_accel"; else if (Math.abs(S.latG) > 0.2) kind = "sharp_corner";
+      if (kind) {
+        S.lastEventAt = now; S.holdCount = 0;
+        if (T.active) T.events.push({ kind, g: +hG.toFixed(2), speed: S.speed, t: now / 1000, lat: S.lat, lon: S.lon });
+        if ($("optAlert").checked && !speechSynthesis.speaking) {
+          const g1 = hG.toFixed(1);
+          say({ hard_brake: `급제동, ${g1}G.`, hard_accel: `급가속, ${g1}G.`, sharp_corner: `코너 횡G ${g1}.` }[kind], true);
+        }
+      }
+    }
+    $("hg").textContent = S.curHG.toFixed(2); $("lg").textContent = S.lonG.toFixed(2); $("tg").textContent = S.latG.toFixed(2);
+    S.trail.push([S.latG, S.lonG]); if (S.trail.length > 60) S.trail.shift();
+    drawGG();
+    if (T.active && now % 1000 < CFG.tickMs) renderTrip();
+  }
+
+  const cv = $("gg"), cx = cv.getContext("2d");
+  function drawGG() {
+    const w = cv.width, c = w / 2, sc = c / 0.8;
+    cx.clearRect(0, 0, w, w); cx.strokeStyle = "#1e2730"; cx.lineWidth = 2;
+    [0.2, 0.4, 0.6, 0.8].forEach((r) => { cx.beginPath(); cx.arc(c, c, r * sc, 0, Math.PI * 2); cx.stroke(); });
+    cx.beginPath(); cx.moveTo(c, 0); cx.lineTo(c, w); cx.moveTo(0, c); cx.lineTo(w, c); cx.stroke();
+    S.trail.forEach(([x, y], i) => { cx.fillStyle = `rgba(255,59,59,${(i + 1) / S.trail.length * 0.6})`; cx.beginPath(); cx.arc(c + x * sc, c - y * sc, 4, 0, Math.PI * 2); cx.fill(); });
+    const l = S.trail[S.trail.length - 1];
+    if (l) { cx.fillStyle = "#fff"; cx.beginPath(); cx.arc(c + l[0] * sc, c - l[1] * sc, 7, 0, Math.PI * 2); cx.fill(); }
+  }
+
+  // ---------- 음성 합성 ----------
+  let koVoice = null;
+  function pickVoice() {
+    const vs = speechSynthesis.getVoices();
+    koVoice = vs.find((v) => v.lang === "ko-KR" && /google|yuna|premium|enhanced/i.test(v.name)) || vs.find((v) => v.lang && v.lang.startsWith("ko")) || null;
+  }
+  if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  function say(text, isAlert = false) {
+    if (!text) return;
+    $("said").textContent = text;
+    if (!("speechSynthesis" in window)) return;
+    if (!isAlert) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.rate = 1.05;
+    u.onstart = () => { $("said").classList.add("speaking"); pauseListening(); };
+    u.onend = u.onerror = () => { $("said").classList.remove("speaking"); resumeListening(); };
+    speechSynthesis.speak(u);
+  }
+
+  // ---------- 음성 인식 ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, recMode = "idle", recRunning = false, awaitingUntil = 0;
+  function makeRec(continuous) {
+    const r = new SR();
+    r.lang = "ko-KR"; r.interimResults = true; r.continuous = continuous;
+    r.onstart = () => { recRunning = true; S.micOk = true; sensorsLine(); };
+    r.onresult = (e) => {
+      let interim = "", final = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) final += t; else interim += t; }
+      $("heard").textContent = final || interim || "…";
+      if (final) handleUtterance(final.trim());
+    };
+    r.onerror = (e) => { if (e.error === "not-allowed") { S.micOk = false; sensorsLine(); } };
+    r.onend = () => {
+      recRunning = false; $("btnTalk").classList.remove("listening");
+      if (recMode === "ptt") recMode = $("optWake").checked ? "wake" : "idle";
+      if (recMode === "wake" && !speechSynthesis.speaking) setTimeout(startWake, 300);
+    };
+    return r;
+  }
+  function handleUtterance(text) {
+    if (recMode === "ptt") { ask(text); return; }
+    if (text.replace(/\s/g, "").includes(CFG.wakeWord)) {
+      const rest = text.split(CFG.wakeWord).slice(1).join(" ").replace(/^(야|아)?[\s,.!?~]*/, "").trim();
+      if (rest.length > 1) ask(rest); else { awaitingUntil = Date.now() + 8000; say("네, 드라이버.", true); }
+    } else if (Date.now() < awaitingUntil) { awaitingUntil = 0; ask(text); }
+  }
+  function startPTT() {
+    if (!SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
+    try { rec && rec.abort(); } catch (_) {}
+    recMode = "ptt"; rec = makeRec(false); $("btnTalk").classList.add("listening"); speechSynthesis.cancel();
+    try { rec.start(); } catch (_) {}
+  }
+  function startWake() { if (!SR || recMode !== "wake" || recRunning) return; rec = makeRec(true); try { rec.start(); } catch (_) {} }
+  function pauseListening() { if (recMode === "wake" && rec && recRunning) { try { rec.abort(); } catch (_) {} } }
+  function resumeListening() { if (recMode === "wake" && !recRunning) setTimeout(startWake, 400); }
+
+  // ---------- UI ----------
+  function renderTrip() {
+    $("btnTrip").textContent = T.active ? "주행 종료" : "주행 시작";
+    $("btnTrip").classList.toggle("recording", T.active);
+    const b = API_KEY ? "" : " · 두뇌: 목업(API 키 없음)", s = summary();
+    $("trip").textContent = !s ? "주행 기록 없음" + b :
+      `${T.active ? "● 기록 중" : "■ 지난 주행"} · ${s.duration_min}분 · ${s.distance_km}km · 최고 ${s.max_speed_kmh}km/h · 감속 ${s.max_brake_g}G · 횡 ${s.max_lateral_g}G · 부드러움 ${s.smoothness_pct ?? "-"}%` + b;
+  }
+  function sensorsLine() {
+    $("sensors").textContent = `GPS: ${S.gpsOk ? "OK" : "-"} · IMU: ${S.imuOk ? "OK" : "-"} · MIC: ${S.micOk ? "OK" : (SR ? "-" : "미지원")} · 두뇌: ${API_KEY ? MODEL : "목업"}`;
+  }
+  let wakeLock = null;
+  async function keepAwake() { try { wakeLock = await navigator.wakeLock.request("screen"); } catch (_) {} }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && wakeLock !== null) keepAwake();
+    if (document.visibilityState === "hidden" && T.active) saveTrip();
+  });
+
+  $("btnStart").onclick = async () => {
+    $("btnStart").disabled = true;
+    if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+    try {
+      if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
+        await DeviceMotionEvent.requestPermission(); // iOS: 권한 팝업
+      }
+    } catch (e) { console.warn(e); }
+    window.addEventListener("devicemotion", onMotion); // 거부된 경우 이벤트가 오지 않을 뿐 무해
+    if (navigator.geolocation) navigator.geolocation.watchPosition(onFix, () => { S.gpsOk = false; sensorsLine(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+    keepAwake(); setInterval(tick, CFG.tickMs);
+    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnStart").style.display = "none";
+    if ($("optWake").checked) { recMode = "wake"; startWake(); }
+    say(API_KEY ? "아스라다, 온라인. 준비됐어요, 드라이버." : "아스라다, 목업 모드로 시작해요. 설정에서 API 키를 넣으면 대화할 수 있어요.");
+  };
+  $("btnTalk").onclick = startPTT;
+  $("btnTrip").onclick = tripToggle;
+  $("optWake").onchange = (e) => { if (e.target.checked) { recMode = "wake"; startWake(); } else { recMode = "idle"; try { rec && rec.abort(); } catch (_) {} } };
+
+  // 설정 패널
+  $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL; renderTrips(); };
+  $("btnSave").onclick = () => {
+    API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
+    store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
+    $("panel").hidden = true; sensorsLine(); renderTrip();
+  };
+  $("btnTest").onclick = async () => {
+    API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || MODEL;
+    $("testOut").textContent = "확인 중…";
+    $("testOut").textContent = await brainAsk("연결 테스트야. 한 문장으로 인사해 줘.", 80);
+  };
+
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  sensorsLine(); drawGG(); renderTrip();
+})();
+
+</script>
+</body>
+</html>
