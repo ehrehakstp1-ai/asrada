@@ -112,8 +112,14 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <input id="inPitch" type="range" min="0.5" max="1.5" step="0.05" value="0.85">
   <p>속도 <b id="rateVal">1.00</b></p>
   <input id="inRate" type="range" min="0.7" max="1.4" step="0.05" value="1.0">
-  <div class="row"><button id="btnPreview">🔊 미리 듣기</button></div>
-  <p>폰에 설치된 한국어 음성 중에서 고를 수 있어요. 음성이 하나뿐이면 폰 설정의 '텍스트 음성 변환'에서 다른 음성을 내려받으면 목록에 추가돼요. 저장을 눌러야 유지됩니다.</p>
+  <div class="row"><button id="btnMale">👨 남성 톤</button><button id="btnFemale">👩 여성 톤</button><button id="btnPreview">🔊 미리 듣기</button></div>
+  <p id="voiceNote"></p>
+  <p><b>진짜 남성 음성 설치하기</b><br>
+  · 안드로이드: 설정 → '텍스트 음성 변환(TTS)' 검색 → 기본 엔진(Google) 옆 ⚙ → 음성 데이터 설치 → 한국어 → 남성 음성 선택. 크롬은 보통 폰에서 고른 음성을 그대로 씁니다.<br>
+  · 아이폰: 설정 → 손쉬운 사용 → 읽기 및 말하기 → 음성 → 한국어 → 남성 음성 다운로드 후, 이 화면을 새로고침하면 목록에 나옵니다.</p>
+  <h2>듣기</h2>
+  <p>말 끝 대기 <b id="endVal">1.2</b>초: 이만큼 조용하면 말이 끝났다고 보고 보냅니다. 말이 중간에 잘리면 늘리고, 반응이 느리면 줄이세요.</p>
+  <input id="inEnd" type="range" min="0.6" max="3" step="0.1" value="1.2">
   <h2>주행 기록</h2>
   <p>기록은 이 폰 안에만 저장됩니다. JSON으로 내려받아 분석할 수 있어요.</p>
   <div id="tripList"></div>
@@ -476,7 +482,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // ---------- 음성 합성 ----------
   let koVoice = null;
-  const VOICE = { name: store.get("asurada_voice"), pitch: +store.get("asurada_pitch", "0.85"), rate: +store.get("asurada_rate", "1.0") };
+  const VOICE = { name: store.get("asurada_voice"), pitch: +store.get("asurada_pitch", "0.85"), rate: +store.get("asurada_rate", "1.0"), endMs: +store.get("asurada_endms", "1200") };
   function pickVoice() {
     const vs = speechSynthesis.getVoices(), ko = vs.filter((v) => v.lang && v.lang.toLowerCase().startsWith("ko"));
     koVoice = ko.find((v) => v.name === VOICE.name) || ko.find((v) => /google|yuna|premium|enhanced/i.test(v.name)) || ko[0] || null;
@@ -493,7 +499,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function speakChunk(text) {
     if (!text || !("speechSynthesis" in window)) return;
     const u = new SpeechSynthesisUtterance(text), gen = ttsGen;
-    u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.pitch = VOICE.pitch; u.rate = VOICE.rate;
+    u.lang = "ko-KR"; try { if (koVoice) u.voice = koVoice; } catch (_) {} u.pitch = VOICE.pitch; u.rate = VOICE.rate;
     ttsPending++;
     u.onstart = () => { $("said").classList.add("speaking"); pauseListening(); };
     u.onend = u.onerror = () => {
@@ -525,19 +531,37 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     r.onstart = () => { if (r !== rec) return; recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
     r.onresult = (e) => {
       if (r !== rec) return;
-      let interim = "", final = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) final += t; else interim += t; }
-      $("heard").textContent = final || interim || "…";
-      if (final) handleUtterance(final.trim());
+      // 결과 전체를 다시 이어 붙인다. 안드로이드는 같은 내용을 누적해서 반복 전달하는 경우가 있어 중복을 걸러낸다.
+      let acc = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const t = (e.results[i][0].transcript || "").trim(); if (!t) continue;
+        const a = acc.replace(/\s/g, ""), b = t.replace(/\s/g, "");
+        if (b.startsWith(a)) acc = t;
+        else if (!a.endsWith(b)) acc = acc ? acc + " " + t : t;
+      }
+      utterBuf = acc; $("heard").textContent = acc || "…";
+      // '확정' 신호를 믿지 않고, 말이 잠시 멈출 때까지 기다렸다가 문장 전체를 넘긴다
+      clearTimeout(utterTimer);
+      utterTimer = setTimeout(() => commitUtterance(r), VOICE.endMs);
     };
     r.onerror = (e) => { if (e.error === "not-allowed") { S.micOk = false; sensorsLine(); } };
     r.onend = () => {
       if (r !== rec) return;
+      if (utterBuf.trim()) commitUtterance(r);   // 인식기가 스스로 끝난 경우 남은 말을 넘긴다
       recRunning = false; $("btnTalk").classList.remove("listening"); $("btnConvo").classList.remove("listening");
       if (recMode === "ptt") recMode = baseMode();
       resumeListening();
     };
     return r;
+  }
+  let utterBuf = "", utterTimer = null, pttTimer = null;
+  function commitUtterance(r) {
+    clearTimeout(utterTimer); clearTimeout(pttTimer);
+    const text = utterBuf.trim(); utterBuf = "";
+    if (!text) return;
+    handleUtterance(text);
+    // 인식기에 쌓인 결과를 비우기 위해 한 번 끊고 다시 시작한다 (onend에서 자동 재시작)
+    if (r === rec && recRunning) { try { r.abort(); } catch (_) {} }
   }
   const STOP_RE = /^(대화\s*(끝|종료|그만)|그만(\s*(할게|하자|해))?|됐어|이제\s*됐어)$/;
   function handleUtterance(text) {
@@ -569,10 +593,14 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (!SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
     askSeq++; if (curCtrl) curCtrl.abort();   // 말하는 중이면 끊고 바로 듣기 (끼어들기)
     stopSpeaking();
-    const old = rec; recMode = "ptt"; rec = makeRec(false); recRunning = false;
+    clearTimeout(utterTimer); utterBuf = "";
+    const old = rec; recMode = "ptt"; rec = makeRec(true); recRunning = false;   // 중간에 쉬어도 끊기지 않게 연속 인식
     try { old && old.abort(); } catch (_) {}
     $("btnTalk").classList.add("listening");
     try { rec.start(); } catch (_) {}
+    clearTimeout(pttTimer);
+    const mine = rec;
+    pttTimer = setTimeout(() => { if (rec === mine && recRunning && !utterBuf) { try { mine.abort(); } catch (_) {} } }, 8000); // 8초간 말이 없으면 종료
   }
   function convoTouch() {
     clearTimeout(convoTimer);
@@ -580,7 +608,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   }
   function setConvo(on) {
     if (on && !SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
-    convo = on;
+    convo = on; clearTimeout(utterTimer); utterBuf = "";
     $("btnConvo").classList.toggle("recording", on);
     $("btnConvo").textContent = on ? "💬 대화 중 (끄기)" : "💬 대화 모드";
     const old = rec; rec = null; recRunning = false;
@@ -635,18 +663,36 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 설정 패널
   $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL;
-    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; voiceLabels(); renderTrips(); };
-  function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); }
+    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; voiceLabels(); renderTrips(); };
+  function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); $("endVal").textContent = (+$("inEnd").value).toFixed(1); }
   function applyVoiceInputs() {
-    VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value;
+    VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value; VOICE.endMs = Math.round(+$("inEnd").value * 1000);
     const vs = speechSynthesis.getVoices(); koVoice = vs.find((v) => v.name === VOICE.name) || koVoice;
   }
-  $("inPitch").oninput = voiceLabels; $("inRate").oninput = voiceLabels;
+  $("inPitch").oninput = voiceLabels; $("inRate").oninput = voiceLabels; $("inEnd").oninput = voiceLabels;
+  // 톤 프리셋: 폰에 남성 음성이 있으면 그걸 고르고, 없으면 기본 음성의 높이를 낮춰 남성 톤에 가깝게
+  const MALE_RE = /male|남성|남자|minsu|민수|jun|준|kod|koc|man\b/i;
+  function koVoices() { return speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("ko")); }
+  function applyPreset(kind) {
+    const ko = koVoices(), male = ko.filter((v) => MALE_RE.test(v.name) && !/female|여성/i.test(v.name)), female = ko.filter((v) => !male.includes(v));
+    let note;
+    if (kind === "male") {
+      if (male.length) { $("inVoice").value = male[0].name; $("inPitch").value = 0.95; $("inRate").value = 0.95; note = `남성 음성(${male[0].name})을 골랐어요.`; }
+      else { $("inPitch").value = 0.55; $("inRate").value = 0.95; note = "폰에 남성 한국어 음성이 없어서, 기본 음성을 낮은 톤으로 바꿨어요. 진짜 남성 음성은 아래 안내대로 폰에 설치하면 목록에 나와요."; }
+    } else {
+      if (female.length) $("inVoice").value = female[0].name;
+      $("inPitch").value = 1.0; $("inRate").value = 1.0; note = "여성 톤으로 바꿨어요.";
+    }
+    voiceLabels(); applyVoiceInputs(); $("voiceNote").textContent = note + " 저장을 눌러야 유지돼요.";
+    say(kind === "male" ? "아스라다, 남성 톤입니다, 주인님." : "아스라다, 여성 톤입니다, 주인님.");
+  }
+  $("btnMale").onclick = () => applyPreset("male");
+  $("btnFemale").onclick = () => applyPreset("female");
   $("btnPreview").onclick = () => { applyVoiceInputs(); say("아스라다, 온라인. 준비됐습니다, 주인님."); };
   $("btnSave").onclick = () => {
     API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
     store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
-    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate));
+    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs));
     $("panel").hidden = true; sensorsLine(); renderTrip();
   };
   $("btnTest").onclick = async () => {
