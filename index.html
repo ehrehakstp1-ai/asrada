@@ -143,6 +143,10 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
      <label><input type="checkbox" id="note_person"> 사람 · 자전거 · 오토바이</label><br>
      <label><input type="checkbox" id="note_object"> 사물 (동물 · 공 · 킥보드 · 정지 표지)</label><br>
      <label><input type="checkbox" id="note_self"> 내 차 급정거 · 급출발 · 급코너</label></p>
+  <p>알림 민감도</p>
+  <select id="inSens"><option value="low">낮음 — 확실할 때만 (오알림 최소, 추천)</option><option value="normal">보통 — 더 자주, 오알림 늘어남</option></select>
+  <p>인식 모델</p>
+  <select id="inVisModel"><option value="lite">빠름 (가벼운 모델)</option><option value="full">정확 (무거운 모델, 폰이 더 뜨거워짐)</option></select>
   <p><label><input type="checkbox" id="note_ai"> Claude가 화면 보고 자연스럽게 말하기 (끄면 고정 문구로 바로)</label></p>
   <p>사람·사물·신호·앞차 알림은 전방 인식을 켜야 동작해. 폰 카메라와 간단한 인식 모델로 하는 보조 기능이라 놓치거나 잘못 알릴 수 있고, 차의 안전 기능을 대신하지 않아.</p>
   <h2>듣기</h2>
@@ -489,6 +493,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   const OBJ = new Set(["dog", "cat", "horse", "cow", "sheep", "sports ball", "skateboard", "stop sign"]);
   const PEOPLE = new Set(["person", "bicycle", "motorcycle"]);
   const posOf = (d) => (d.cx < 0.35 ? "왼쪽" : d.cx > 0.65 ? "오른쪽" : "정면");
+  const SENS = () => (store.get("asurada_sens", "low") === "normal" ? 0.8 : 1); // 값이 클수록 기준이 엄격
   const VISION = { on: false, model: null, stream: null, busy: false, timer: null, dets: [], lead: null, leadHist: [],
                    stopSince: 0, light: null, lightPrev: null, cool: {}, fps: 0, lastT: 0, W: 0, H: 0 };
 
@@ -502,7 +507,9 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   async function loadDetector() {
     if (window.__fakeDetector) return window.__fakeDetector; // 테스트용
     for (const l of LIBS) await loadScript(l);
-    return await window.cocoSsd.load({ base: "lite_mobilenet_v2" });
+    const base = store.get("asurada_vismodel", "lite") === "full" ? "mobilenet_v2" : "lite_mobilenet_v2";
+    dlog("인식 모델", base);
+    return await window.cocoSsd.load({ base });
   }
 
   async function visionOn() {
@@ -522,7 +529,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function visionOff() {
     VISION.on = false; clearTimeout(VISION.timer);
     if (VISION.stream) VISION.stream.getTracks().forEach((t) => t.stop());
-    VISION.stream = null; VISION.dets = []; VISION.lead = null; VISION.leadHist = [];
+    VISION.stream = null; VISION.dets = []; VISION.lead = null; VISION.leadHist = []; VISION.tracks = []; VISION.fcwHits = 0;
     $("vision").hidden = true; $("btnVision").classList.remove("recording"); $("btnVision").textContent = "👁 전방 인식";
     const c = $("camBox"); c.getContext("2d").clearRect(0, 0, c.width, c.height);
   }
@@ -544,6 +551,26 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     VISION.timer = setTimeout(visionLoop, 250); // 약 4fps: 배터리·발열 절약
   }
 
+  function iou(a, b) {
+    const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+    const i = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    return i / (a.w * a.h + b.w * b.h - i || 1);
+  }
+  function updateTracks(veh, t) {
+    const used = new Set();
+    (VISION.tracks || []).forEach((tr) => {
+      let best = -1, bi = 0.25;
+      veh.forEach((d, i) => { if (used.has(i)) return; const v = iou(tr.box, d); if (v > bi) { bi = v; best = i; } });
+      if (best >= 0) {
+        used.add(best); const d = veh[best];
+        tr.box = d; tr.age++; tr.miss = 0; tr.ws = tr.ws * 0.6 + d.w * 0.4; // 폭은 부드럽게(흔들림 제거)
+        tr.hist.push([t, d.cx, tr.ws]);
+      } else tr.miss++;
+      tr.hist = tr.hist.filter(([tt]) => t - tt <= 2.5);
+    });
+    veh.forEach((d, i) => { if (!used.has(i)) (VISION.tracks = VISION.tracks || []).push({ id: (VISION.nextId = (VISION.nextId || 0) + 1), box: d, age: 1, miss: 0, ws: d.w, hist: [[t, d.cx, d.w]] }); });
+    VISION.tracks = (VISION.tracks || []).filter((tr) => tr.miss <= 3); // 3프레임(약 0.75초)까지는 놓쳐도 유지
+  }
   function analyze(raw, t) {
     const W = VISION.W || 1, H = VISION.H || 1;
     const dets = raw.map((d) => {
@@ -553,38 +580,55 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     VISION.dets = dets;
     const v = S.speed || 0, kmh = Math.round(v * 3.6);
 
-    // ── 앞차: 화면 가운데에 있는 가장 큰 차량
-    const prevLead = VISION.lead;
-    const lead = dets.filter((d) => VEH.has(d.cls) && d.cx > 0.3 && d.cx < 0.7 && d.by > 0.4).sort((a, b) => b.w - a.w)[0] || null;
-    VISION.lead = lead;
-    if (lead) VISION.leadHist.push([t, lead.w]); else VISION.leadHist = [];
-    VISION.leadHist = VISION.leadHist.filter(([tt]) => t - tt <= 1.5);
+    // ── 차량 추적: 프레임마다 박스가 흔들리거나 잠깐 놓쳐도 같은 차로 이어 붙인다
+    updateTracks(dets.filter((d) => VEH.has(d.cls) && d.score >= 0.5), t);
+    const k = SENS();
+    const prevLeadId = VISION.leadId;
+    const leadTr = VISION.tracks.filter((tr) => tr.miss <= 2 && tr.box.cx > 0.3 && tr.box.cx < 0.7 && tr.box.by > 0.4).sort((a, b) => b.ws - a.ws)[0] || null;
+    VISION.lead = leadTr ? leadTr.box : null; VISION.leadId = leadTr ? leadTr.id : null;
+    if (leadTr && leadTr.id !== prevLeadId) VISION.leadSince = t;
 
-    // 앞차 급정거·급접근: 박스 폭이 커지는 속도로 충돌까지 남은 시간(TTC) 추정
-    let ttc = null;
-    const hst = VISION.leadHist;
-    if (hst.length >= 4) {
-      const n = hst.length, mt = hst.reduce((a, [tt]) => a + tt, 0) / n, mw = hst.reduce((a, [, w]) => a + w, 0) / n;
-      let num = 0, den = 0; hst.forEach(([tt, w]) => { num += (tt - mt) * (w - mw); den += (tt - mt) ** 2; });
-      const slope = den ? num / den : 0;
-      if (slope > 0.005) ttc = hst[n - 1][1] / slope;
+    // 앞차 급정거: 같은 차를 1.5초 이상 추적했고, 1.5초 사이 박스가 30% 이상 커졌고, 부딪히기까지 2.5초 미만이고, 내가 아직 브레이크를 안 밟았을 때만
+    let ttc = null, growth = 1;
+    if (leadTr && leadTr.age >= 6) {
+      const hst = leadTr.hist.filter(([tt]) => t - tt <= 1.5);
+      if (hst.length >= 5) {
+        const n = hst.length, mt = hst.reduce((a, [tt]) => a + tt, 0) / n, mw = hst.reduce((a, [, , w]) => a + w, 0) / n;
+        let num = 0, den = 0; hst.forEach(([tt, , w]) => { num += (tt - mt) * (w - mw); den += (tt - mt) ** 2; });
+        const slope = den ? num / den : 0;
+        growth = hst[n - 1][2] / hst[0][2];
+        if (slope > 0) ttc = hst[n - 1][2] / slope;
+      }
     }
     VISION.ttc = ttc;
-    if (lead && v > 4 && ttc !== null && ttc < 2.2 && lead.w > 0.12) notify("fcw", "car", "앞차 급정거! 조심해.", { urgent: true, cool: 6 });
-    else if (lead && v > 8 && lead.w > 0.5) notify("close", "car", "앞차랑 너무 붙었어.", { cool: 20, ai: false });
+    const fcwNow = leadTr && v > 5.5 * k && ttc !== null && ttc < 2.5 / k && growth >= 1 + 0.3 * k && leadTr.ws > 0.12 && S.lonG > -0.25;
+    VISION.fcwHits = fcwNow ? (VISION.fcwHits || 0) + 1 : 0;
+    if (ttc !== null && ttc < 3 && growth > 1.1 && t - (VISION.ttcLog || 0) > 1) { VISION.ttcLog = t; dlog("앞차 접근 후보", "TTC", ttc.toFixed(2), "커짐", growth.toFixed(2), "폭", leadTr.ws.toFixed(2), "종G", S.lonG.toFixed(2), fcwNow ? "→조건충족" : ""); }
+    if (VISION.fcwHits >= 2) notify("fcw", "car", "앞차 급정거! 조심해.", { urgent: true, cool: 8,
+      detail: `TTC ${ttc.toFixed(2)}s, 커짐 ${growth.toFixed(2)}배, 폭 ${(leadTr.ws * 100).toFixed(0)}%, 추적 ${leadTr.age}프레임, ${kmh}km/h` });
 
-    // 끼어들기: 앞차가 없거나 작았는데 갑자기 가까운 차가 정면에 나타남
-    if (lead && v > 5 && lead.w > 0.25 && (!prevLead || prevLead.w < lead.w * 0.6) && Math.abs(lead.cx - (prevLead ? prevLead.cx : 0.5)) > 0.08)
-      notify("cutin", "car", "앞에 차 끼어들었어!", { urgent: true, cool: 8 });
+    // 차간거리: 화면 폭 절반 이상을 2초 넘게 유지
+    if (leadTr && v > 8 && leadTr.ws > 0.5) { VISION.closeSince = VISION.closeSince || t; if (t - VISION.closeSince > 2) notify("close", "car", "앞차랑 너무 붙었어.", { cool: 20, ai: false }); }
+    else VISION.closeSince = 0;
 
-    // 정차 중 앞차 출발: 3초 이상 정지 + 앞차 박스가 2초 사이 15% 이상 작아짐
+    // 끼어들기: 옆 차선(화면 가장자리)에 있던 차를 추적해서, 2초 안에 정면으로 들어온 게 확인될 때만
+    if (v > 4.2 * k) {
+      VISION.tracks.forEach((tr) => {
+        if (tr.miss || tr.age < 4 || tr.ws < 0.2 * k || tr.box.cx < 0.35 || tr.box.cx > 0.65 || tr.box.by < 0.5) return;
+        const h2 = tr.hist.filter(([tt]) => t - tt <= 2.0);
+        const startCx = h2.length ? h2[0][1] : 0.5;
+        if ((startCx < 0.27 || startCx > 0.73) && h2.length >= 4)
+          notify("cutin", "car", "앞에 차 끼어들었어!", { urgent: true, cool: 10, detail: `가로 위치 ${startCx.toFixed(2)}→${tr.box.cx.toFixed(2)}, 폭 ${(tr.ws * 100).toFixed(0)}%, ${kmh}km/h` });
+      });
+    }
+
+    // 정차 중 앞차 출발: 3초 이상 정지 + 같은 앞차의 박스가 2초 사이 15% 이상 작아짐
     if (v < 0.5) { if (!VISION.stopSince) VISION.stopSince = t; } else VISION.stopSince = 0;
     const stopped = VISION.stopSince && t - VISION.stopSince > 3;
-    if (lead) {
-      VISION.leadW2 = (VISION.leadW2 || []).filter(([tt]) => t - tt <= 2.2); VISION.leadW2.push([t, lead.w]);
-      const old = VISION.leadW2[0];
-      if (stopped && old && t - old[0] > 1.5 && lead.w < old[1] * 0.85 && old[1] > 0.12) notify("lead_departed", "depart", "앞차 출발했어, 주인님.", { cool: 15, ai: false });
-    } else VISION.leadW2 = [];
+    if (leadTr && leadTr.age >= 8) {
+      const h2 = leadTr.hist.filter(([tt]) => t - tt <= 2.2), old = h2[0];
+      if (stopped && old && t - old[0] > 1.5 && leadTr.ws < old[2] * 0.85 && old[2] > 0.12) notify("lead_departed", "depart", "앞차 출발했어, 주인님.", { cool: 15, ai: false });
+    }
 
     // ── 신호 변화: 같은 색이 두 번 연속 보이면 '확정', 확정 색이 바뀌면 알림
     const tl = dets.filter((d) => d.cls === "traffic light" && d.y < 0.6).sort((a, b) => b.w * b.h - a.w * a.h)[0];
@@ -604,11 +648,14 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     // ── 사람·자전거·오토바이
     const ppl = dets.filter((d) => PEOPLE.has(d.cls) && !(d.cls === "motorcycle" && d === lead));
     const near = ppl.find((d) => d.cx > 0.3 && d.cx < 0.7 && d.h > 0.3 && d.by > 0.55);
-    if (near && v > 2) notify("ped_close", "person", `앞에 ${KO[near.cls]}! 조심해.`, { urgent: true, cool: 6 });
-    VISION.pplHist = (VISION.pplHist || []).filter(([tt]) => t - tt <= 2);
-    const prevMax = VISION.pplHist.reduce((m, [, n]) => Math.max(m, n), 0);
-    VISION.pplHist.push([t, ppl.length]);
-    if (ppl.length > prevMax && ppl.length > 0) {
+    VISION.nearHits = near && near.score >= 0.55 && v > 2 ? (VISION.nearHits || 0) + 1 : 0;
+    if (VISION.nearHits >= 2) notify("ped_close", "person", `앞에 ${KO[near.cls]}! 조심해.`, { urgent: true, cool: 8, detail: `위치 ${near.cx.toFixed(2)}, 높이 ${(near.h * 100).toFixed(0)}%, ${kmh}km/h` });
+    // 사람 수가 '확실히' 늘었을 때만: 최근 3프레임 내내 보인 수(최솟값)가, 그 전 2초 동안의 최대보다 많을 때
+    VISION.pplHist = (VISION.pplHist || []).filter(([tt]) => t - tt <= 3); VISION.pplHist.push([t, ppl.length]);
+    const recent = VISION.pplHist.slice(-3), older = VISION.pplHist.slice(0, -3);
+    const confirmed = recent.length === 3 ? Math.min(...recent.map(([, n]) => n)) : 0;
+    const baseline = older.length ? Math.max(...older.map(([, n]) => n)) : 0;
+    if (confirmed > 0 && confirmed > baseline && older.length >= 2) {
       const big = ppl.slice().sort((a, b) => b.h - a.h)[0];
       notify("people", "person", `${posOf(big)}에 ${KO[big.cls]} 있어.`, { cool: 10,
         detail: `${ppl.map((d) => KO[d.cls]).join(", ")} 감지 (가장 가까운 것: ${posOf(big)}, 화면 높이의 ${Math.round(big.h * 100)}%), 내 속도 ${kmh}km/h` });
@@ -616,7 +663,12 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
     // ── 사물(동물·공·킥보드·정지 표지): 새로 나타난 종류만
     VISION.objSeen = VISION.objSeen || {};
-    dets.filter((d) => OBJ.has(d.cls)).forEach((d) => {
+    VISION.objRun = VISION.objRun || {};
+    const present = new Set(dets.filter((d) => OBJ.has(d.cls) && d.score >= 0.55).map((d) => d.cls));
+    Object.keys(VISION.objRun).forEach((c) => { if (!present.has(c)) VISION.objRun[c] = 0; });
+    dets.filter((d) => OBJ.has(d.cls) && d.score >= 0.55).forEach((d) => {
+      VISION.objRun[d.cls] = (VISION.objRun[d.cls] || 0) + 1;
+      if (VISION.objRun[d.cls] !== 3) return; // 3프레임 연속으로 보였을 때 한 번
       const last = VISION.objSeen[d.cls] || 0; VISION.objSeen[d.cls] = t;
       if (t - last > 3) notify("obj_" + d.cls, "object", `${posOf(d)}에 ${KO[d.cls]} 있어.`, { cool: 15, detail: `${KO[d.cls]} 감지, 위치 ${posOf(d)}, 내 속도 ${kmh}km/h` });
     });
@@ -775,6 +827,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     }
     Object.assign(S, { lat: c.latitude, lon: c.longitude, speed, heading, gpsOk: true });
     S.lastFix = { t, lat: c.latitude, lon: c.longitude, speed, heading };
+    if (speed != null) { (S.vHist = S.vHist || []).push([t, speed]); S.vHist = S.vHist.filter(([tt]) => t - tt <= 4); }
     sensorsLine();
     $("speed").textContent = speed === null ? "--" : Math.round(speed * 3.6);
   }
@@ -795,19 +848,32 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   }
 
   // ---------- 주기 처리 ----------
+  // 최근 n초 동안 GPS 속도 변화 (m/s). 데이터가 부족하면 null
+  function gpsDv(n) {
+    const h = S.vHist || []; if (h.length < 2) return null;
+    const last = h[h.length - 1], first = h.find(([tt]) => last[0] - tt <= n) || h[0];
+    return last[0] - first[0] >= 0.8 ? last[1] - first[1] : null;
+  }
   function tick() {
     const hG = S.peakHG; S.peakHG = 0;
     addSample({ t: Date.now() / 1000, lat: S.lat, lon: S.lon, speed: S.speed, h_g: hG, lon_g: S.lonG, lat_g: Math.abs(S.latG) });
-    if (hG >= CFG.eventG && (S.speed || 0) > 1.4) S.holdCount++; else S.holdCount = 0;
+    // 내 차 급정거·급출발·급코너: GPS 속도 변화로 판단하고, 가속도계는 '실제로 힘이 걸렸는지' 확인용으로만 쓴다
+    //  → 과속방지턱·거치대 흔들림(가속도만 튐)이나 GPS 튐(속도만 튐)으로는 울리지 않음
     const now = Date.now();
-    if (S.holdCount >= CFG.eventHoldWindows && now - S.lastEventAt > CFG.eventCooldownMs) {
+    (S.gHist = S.gHist || []).push([now, hG]); S.gHist = S.gHist.filter(([tt]) => now - tt <= 1500);
+    const gMax = Math.max(0, ...S.gHist.map(([, g]) => g));
+    if (now - S.lastEventAt > CFG.eventCooldownMs && (S.speed || 0) > 1.4) {
+      const k = SENS(), dv = gpsDv(2);
       let kind = null;
-      if (S.lonG < -0.15) kind = "hard_brake"; else if (S.lonG > 0.15) kind = "hard_accel"; else if (Math.abs(S.latG) > 0.2) kind = "sharp_corner";
+      if (dv !== null && dv <= -3.5 * k && gMax >= 0.25 * k) kind = "hard_brake";
+      else if (dv !== null && dv >= 4.0 * k && gMax >= 0.25 * k) kind = "hard_accel";
+      else if (Math.abs(S.latG) > 0.4 * k && (S.speed || 0) > 5 && gMax >= 0.3 * k) kind = "sharp_corner";
+      else if (hG >= 0.5 && (S.speed || 0) > 3 && now - (S.lastShakeLog || 0) > 3000) { S.lastShakeLog = now; dlog("흔들림 무시", hG.toFixed(2) + "G", "dv", dv === null ? "-" : dv.toFixed(1)); }
       if (kind) {
-        S.lastEventAt = now; S.holdCount = 0;
-        const g1 = hG.toFixed(1), kmh = Math.round((S.speed || 0) * 3.6);
+        S.lastEventAt = now;
+        const g1 = gMax.toFixed(1), kmh = Math.round((S.speed || 0) * 3.6);
         notify(kind, "self", { hard_brake: `급정거, ${g1}G.`, hard_accel: `급출발, ${g1}G.`, sharp_corner: `급코너, 횡G ${g1}.` }[kind],
-          { cool: 6, detail: `내 차 ${{ hard_brake: "급정거", hard_accel: "급출발(급가속)", sharp_corner: "급코너" }[kind]} ${g1}G, 속도 약 ${kmh}km/h` });
+          { cool: 6, detail: `내 차 ${{ hard_brake: "급정거", hard_accel: "급출발(급가속)", sharp_corner: "급코너" }[kind]} ${g1}G, 2초간 속도 변화 ${dv === null ? "-" : (dv * 3.6).toFixed(0)}km/h, 현재 ${kmh}km/h` });
       }
     }
     $("hg").textContent = S.curHG.toFixed(2); $("lg").textContent = S.lonG.toFixed(2); $("tg").textContent = S.latG.toFixed(2);
@@ -1047,7 +1113,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 설정 패널
   $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL;
-    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); voiceLabels(); renderTrips(); };
+    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); $("inSens").value = store.get("asurada_sens", "low"); $("inVisModel").value = store.get("asurada_vismodel", "lite"); voiceLabels(); renderTrips(); };
   function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); $("endVal").textContent = (+$("inEnd").value).toFixed(1); }
   function applyVoiceInputs() {
     VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value; VOICE.endMs = Math.round(+$("inEnd").value * 1000);
@@ -1083,7 +1149,8 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   $("btnSave").onclick = () => {
     API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
     store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
-    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value);
+    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value); store.set("asurada_sens", $("inSens").value);
+    if (store.get("asurada_vismodel", "lite") !== $("inVisModel").value) { store.set("asurada_vismodel", $("inVisModel").value); VISION.model = null; if (VISION.on) { visionOff(); visionOn(); } }
     $("panel").hidden = true; sensorsLine(); renderTrip();
   };
   $("btnTest").onclick = async () => {
