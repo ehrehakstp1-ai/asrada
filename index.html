@@ -62,6 +62,7 @@ header .right{display:flex;gap:8px;align-items:center}
 button.look{position:absolute;right:8px;bottom:8px;padding:8px 12px;font-size:14px;background:rgba(7,9,12,.75)}
 .visstatus{font-size:12px;color:var(--dim);margin-top:6px}
 button.wide{grid-column:span 2}
+#diagOut{width:100%;margin-top:8px;font:12px ui-monospace,monospace;background:#000;color:#9fb;border:1px solid var(--line);border-radius:8px;padding:8px}
 #testOut{font-size:14px;margin-top:8px;min-height:20px}
 .triprow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
@@ -101,11 +102,10 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <button id="btnTalk" class="talk" disabled>🎙 말하기</button>
   <button id="btnTrip" disabled>주행 시작</button>
   <button id="btnConvo" disabled>💬 대화 모드</button>
-  <button id="btnVision" disabled>👁 전방 인식</button>
-  <button id="btnBrief" disabled>🗣 정기 브리핑</button>
+  <button id="btnVision" class="wide" disabled>👁 전방 인식</button>
   <div class="toggles">
     <label><input type="checkbox" id="optWake"> “아스라다” 호출어</label>
-    <label><input type="checkbox" id="optAlert" checked> 이벤트 음성 경고</label>
+    <label><input type="checkbox" id="optAlert" checked> 상황 알림</label>
   </div>
   <div id="sensors" class="sensors"></div>
 </footer>
@@ -135,19 +135,23 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <h2>말투 · 효과음</h2>
   <select id="inStyle"><option value="normal">기본 (자연스러운 존댓말)</option><option value="machine">기계적 (간결한 보고체)</option></select>
   <p><label><input type="checkbox" id="optSfx" checked> 효과음: 시작음, 듣기 신호, 처리 중 소리, 응답 신호</label></p>
-  <h2>정기 브리핑</h2>
-  <select id="inBrief"><option value="30">30초마다</option><option value="60">1분마다</option><option value="120">2분마다</option><option value="300">5분마다</option></select>
-  <p><label><input type="checkbox" id="optBriefCam"> 전방 인식이 켜져 있으면 화면도 보고 브리핑</label></p>
-  <p>대화 중이거나 아스라다가 말하는 중이면 잠깐 미뤘다가 말해요. 1분마다 하면 1시간에 약 60번 Claude를 부르니, 비용을 줄이려면 모델을 claude-haiku-5-5로 바꾸거나 카메라 포함을 끄세요.</p>
-  <h2>전방 인식 경고</h2>
-  <p><label><input type="checkbox" id="vis_fcw"> 앞차 급접근 · 차간거리</label><br>
-     <label><input type="checkbox" id="vis_ped"> 보행자 · 자전거</label><br>
-     <label><input type="checkbox" id="vis_depart"> 정차 중 앞차 출발</label><br>
-     <label><input type="checkbox" id="vis_light"> 정차 중 신호 변경 (초록불)</label></p>
-  <p>폰 카메라와 간단한 인식 모델로 하는 보조 기능이라 놓치거나 잘못 알릴 수 있어요. 차의 안전 기능을 대신하지 않습니다. 영상은 저장하지 않고, "앞 상황" 질문 때만 그 순간 사진 한 장이 Claude로 전송됩니다.</p>
+  <h2>상황 알림</h2>
+  <p>주변에 일이 생기면 그때 알려 줘. 긴급한 건(앞차 급정거, 끼어들기, 바로 앞 사람) 바로 짧게, 나머지는 Claude가 화면을 보고 자연스럽게 말해.</p>
+  <p><label><input type="checkbox" id="note_car"> 앞차 급정거 · 끼어들기 · 차간거리</label><br>
+     <label><input type="checkbox" id="note_depart"> 정차 중 앞차 출발</label><br>
+     <label><input type="checkbox" id="note_light"> 신호 변화 (초록·노랑·빨강)</label><br>
+     <label><input type="checkbox" id="note_person"> 사람 · 자전거 · 오토바이</label><br>
+     <label><input type="checkbox" id="note_object"> 사물 (동물 · 공 · 킥보드 · 정지 표지)</label><br>
+     <label><input type="checkbox" id="note_self"> 내 차 급정거 · 급출발 · 급코너</label></p>
+  <p><label><input type="checkbox" id="note_ai"> Claude가 화면 보고 자연스럽게 말하기 (끄면 고정 문구로 바로)</label></p>
+  <p>사람·사물·신호·앞차 알림은 전방 인식을 켜야 동작해. 폰 카메라와 간단한 인식 모델로 하는 보조 기능이라 놓치거나 잘못 알릴 수 있고, 차의 안전 기능을 대신하지 않아.</p>
   <h2>듣기</h2>
   <p>말 끝 대기 <b id="endVal">1.2</b>초: 이만큼 조용하면 말이 끝났다고 보고 보냅니다. 말이 중간에 잘리면 늘리고, 반응이 느리면 줄이세요.</p>
   <input id="inEnd" type="range" min="0.6" max="3" step="0.1" value="1.2">
+  <h2>🔧 진단 로그</h2>
+  <p>말이 끊기거나 이상하면, 그 직후에 여기 기록을 복사해서 보내 줘. 원인을 찾을 수 있어.</p>
+  <div class="row"><button id="btnDiag">로그 보기</button><button id="btnDiagCopy">복사</button></div>
+  <textarea id="diagOut" readonly rows="8" hidden></textarea>
   <h2>주행 기록</h2>
   <p>기록은 이 폰 안에만 저장됩니다. JSON으로 내려받아 분석할 수 있어요.</p>
   <div id="tripList"></div>
@@ -164,6 +168,13 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   "use strict";
   const $ = (id) => document.getElementById(id);
   const G = 9.80665;
+  // 진단 로그: 말 끊김 같은 문제를 폰에서 확인하기 위한 최근 기록 (설정 화면에서 복사 가능)
+  const DIAG = [];
+  const short = (x) => String(x || "").slice(0, 14);
+  function dlog(...a) {
+    const d = new Date(), ts = d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    DIAG.push(ts + " " + a.join(" ")); if (DIAG.length > 200) DIAG.shift();
+  }
 
   const CFG = {
     tickMs: 200, eventG: 0.35, eventHoldWindows: 2, eventCooldownMs: 6000,
@@ -265,24 +276,24 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 말하기 규칙:
 - 답은 음성으로 읽힌다. 주행 중에는 1~2문장, 짧고 또렷하게. 마크다운·이모지·목록 금지.
 - 숫자는 반올림해서 말한다 (예: 0.42G → 0.4G, 63.7km/h → 64킬로).
-- 사용자를 항상 '주인님'이라고 부른다. 정중하고 침착하며 신뢰감 있는 말투, 가끔 짧은 격려.
+- 사용자를 '주인님'이라고 부르되 반말로 말한다. 친한 파트너처럼 편하고 침착한 말투, 가끔 짧은 격려. 존댓말(요, 습니다)은 쓰지 않는다. 예: '주인님, 지금 64킬로야. 감속 부드러웠어.'
 - 제공된 [상태] 데이터에 없는 것은 추측하지 말고 모른다고 말한다.
 - 과속, 급가속 경쟁, 위험한 주행을 부추기지 않는다. 안전과 부드러운 주행, 전비 효율을 우선한다.
 - 전기차 코칭 관점: 일찍 감속을 시작해 회생제동에 맡기기, 일정한 속도 유지, 코너에서 부드러운 조향.
 - 대화는 실시간 음성으로 이어진다. 사람과 주고받듯 자연스럽게 한두 문장으로 답하고, 필요하면 짧게 되묻는다. 첫 문장에 핵심을 말한다.`;
   const STYLE_LINES = {
     normal: "",
-    machine: "\n- 말투: 차량 AI답게 간결한 보고체. 감탄사·구어체 군더더기 없이 짧은 명사형·단문으로 끊어 말한다. 예: '주인님, 현재 속도 64킬로. 감속 양호. 다음 코너, 조금 일찍 감속 권장합니다.'",
+    machine: "\n- 말투: 차량 AI답게 간결한 보고체. 감탄사·구어체 군더더기 없이 짧은 명사형·단문으로 끊어 말한다. 예: '주인님, 현재 속도 64킬로. 감속 양호. 다음 코너는 좀 일찍 감속해.'",
   };
   function systemPrompt() { return PERSONA + (STYLE_LINES[store.get("asurada_style", "normal")] || ""); }
   const DEBRIEF = `방금 주행이 끝났다. [상태]의 이번 주행 요약을 바탕으로 음성 디브리핑을 해라.
-3~4문장: 핵심 수치 한두 개, 잘한 점 하나, 다음에 개선할 점 하나. 수치 근거가 약하면 그렇다고 말한다.`;
+3~4문장, 반말로: 핵심 수치 한두 개, 잘한 점 하나, 다음에 개선할 점 하나. 수치 근거가 약하면 그렇다고 말한다.`;
   const history = [];
   let thinking = false;
 
   async function brainAsk(text, maxTokens = 250) {
     const ctx = contextText();
-    if (!API_KEY) return "목업 모드예요, 주인님. 설정에서 API 키를 넣어 주세요. " + ctx.split("\n")[0] + ".";
+    if (!API_KEY) return "목업 모드야, 주인님. 설정에서 API 키를 넣어 줘. " + ctx.split("\n")[0] + ".";
     const messages = [...history.slice(-12), { role: "user", content: `[상태]\n${ctx}\n\n[주인님]\n${text}` }];
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 20000);
     try {
@@ -295,52 +306,66 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
         body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: systemPrompt(), messages }),
       });
       const j = await r.json();
-      if (!r.ok) return `두뇌 연결 오류예요. ${j?.error?.message?.slice(0, 80) || r.status}`;
+      if (!r.ok) return `두뇌 연결 오류야. ${j?.error?.message?.slice(0, 80) || r.status}`;
       const reply = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
       history.push({ role: "user", content: text }, { role: "assistant", content: reply });
       return reply;
     } catch (e) {
-      return "지금은 두뇌 연결이 불안정해요. 통신 상태를 확인해 주세요.";
+      return "지금 두뇌 연결이 불안정해. 통신 상태 확인해 줘.";
     } finally { clearTimeout(to); }
   }
 
   // ---------- 효과음 (WebAudio로 직접 합성: 파일 없음) ----------
+  // 안드로이드는 웹오디오가 소리를 내는 순간 음성(TTS)이 끊길 수 있어서:
+  //  - 아스라다가 말하는 중에는 효과음을 내지 않고
+  //  - 효과음이 끝나면 오디오 장치를 바로 놓아 준다(suspend)
   const SFX = (() => {
-    let ac = null, thinkTimer = null;
+    let ac = null, susT = null;
     const isOn = () => store.get("asurada_sfx", "1") === "1";
-    function init() { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (_) {} }
+    const busy = () => ttsPending > 0;
+    function init() { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
     function tone(freq, t0, dur, o = {}) {
-      if (!ac || !isOn()) return;
-      try {
-        const osc = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + t0, vol = o.vol || 0.05;
-        osc.type = o.type || "square"; osc.frequency.setValueAtTime(freq, t);
-        if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
-        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-        osc.connect(g); g.connect(ac.destination); osc.start(t); osc.stop(t + dur + 0.02);
-      } catch (_) {}
+      const osc = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + t0, vol = o.vol || 0.05;
+      osc.type = o.type || "square"; osc.frequency.setValueAtTime(freq, t);
+      if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g); g.connect(ac.destination); osc.start(t); osc.stop(t + dur + 0.02);
+      return t0 + dur;
     }
+    async function play(name, fn) {
+      if (!ac || !isOn()) return;
+      if (busy()) { dlog("SFX 생략(말하는 중)", name); return; }
+      try { if (ac.state !== "running") await ac.resume(); } catch (_) {}
+      if (busy()) return;
+      dlog("SFX", name);
+      let end = 0; try { end = fn(); } catch (_) {}
+      clearTimeout(susT); susT = setTimeout(() => { try { ac.suspend(); } catch (_) {} }, (end + 0.25) * 1000);
+    }
+    function hush() { clearTimeout(susT); try { if (ac && ac.state === "running") ac.suspend(); } catch (_) {} }
     return {
-      init,
-      boot() { tone(180, 0, 0.45, { type: "sawtooth", vol: 0.035, to: 900 }); [0.5, 0.58, 0.66, 0.74].forEach((d, i) => tone(700 + i * 260, d, 0.05)); tone(1760, 0.86, 0.18, { type: "sine", vol: 0.06 }); },
-      listen() { tone(1300, 0, 0.045, { type: "sine" }); tone(1750, 0.06, 0.06, { type: "sine" }); },
-      ack() { tone(950, 0, 0.035, { vol: 0.03 }); tone(1400, 0.045, 0.03, { vol: 0.03 }); },
-      chirp() { tone(1500, 0, 0.07, { type: "sine", vol: 0.045, to: 2600 }); },
-      alert() { tone(880, 0, 0.09); tone(660, 0.12, 0.09); },
-      thinkStart() { clearInterval(thinkTimer); if (!isOn()) return; thinkTimer = setInterval(() => tone(500 + Math.random() * 1100, 0, 0.022, { vol: 0.016 }), 110); },
-      thinkStop() { clearInterval(thinkTimer); thinkTimer = null; },
+      init, hush,
+      boot() { play("boot", () => { tone(180, 0, 0.45, { type: "sawtooth", vol: 0.035, to: 900 }); [0.5, 0.58, 0.66, 0.74].forEach((d, i) => tone(700 + i * 260, d, 0.05)); return tone(1760, 0.86, 0.18, { type: "sine", vol: 0.06 }); }); },
+      listen() { play("listen", () => { tone(1300, 0, 0.045, { type: "sine" }); return tone(1750, 0.06, 0.06, { type: "sine" }); }); },
+      ack() { play("ack", () => { tone(950, 0, 0.035, { vol: 0.03 }); return tone(1400, 0.045, 0.03, { vol: 0.03 }); }); },
+      chirp() { play("chirp", () => tone(1500, 0, 0.07, { type: "sine", vol: 0.045, to: 2600 })); },
+      alert() { play("alert", () => { tone(880, 0, 0.09); return tone(660, 0.12, 0.09); }); },
+      thinkStart() {}, thinkStop() {},
     };
   })();
+  // 효과음 → 0.35초 쉬고 → 말하기 (겹치지 않게)
+  function alertThenSay(text) { SFX.alert(); setTimeout(() => say(text, true), 350); }
 
   // 스트리밍 두뇌: 토큰이 오는 대로 화면에 표시하고, 문장이 끝날 때마다 바로 읽는다
   let curCtrl = null, askSeq = 0;
-  async function brainStream(text, maxTokens, onDelta, onSentence, image, histText) {
-    if (!API_KEY) { const m = "목업 모드예요, 주인님. 설정에서 API 키를 넣어 주세요."; onDelta(m); onSentence(m); return m; }
+  async function brainStream(text, maxTokens, onDelta, onSentence, image, histText, opts = {}) {
+    if (!API_KEY) { const m = "목업 모드야, 주인님. 설정에서 API 키를 넣어 줘."; onDelta(m); onSentence(m); return m; }
     const ctx = contextText();
     const userText = `[상태]\n${ctx}\n\n[주인님]\n${text}`;
     const content = image ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } }, { type: "text", text: userText + "\n\n(첨부 이미지: 지금 전방 카메라 화면)" }] : userText;
     const messages = [...history.slice(-12), { role: "user", content }];
     const ctrl = new AbortController(); curCtrl = ctrl;
-    let to = setTimeout(() => ctrl.abort(), 20000), full = "", buf = "";
+    const firstMs = opts.timeoutMs || 20000;
+    let to = setTimeout(() => ctrl.abort(), firstMs), full = "", buf = "";
     const flush = (force) => {
       let m;
       while ((m = buf.match(/^[\s\S]*?[.!?。…~](?=\s)/))) { const t = m[0].trim(); buf = buf.slice(m[0].length); if (t) onSentence(t); }
@@ -357,7 +382,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       });
       if (!r.ok) {
         let msg = r.status; try { const j = await r.json(); msg = j?.error?.message?.slice(0, 80) || msg; } catch (_) {}
-        const e = `두뇌 연결 오류예요. ${msg}`; onDelta(e); onSentence(e); return e;
+        const e = opts.fallback || `두뇌 연결 오류야. ${msg}`; onDelta(e); onSentence(e); return e;
       }
       const reader = r.body.getReader(), dec = new TextDecoder(); let sse = "";
       for (;;) {
@@ -380,25 +405,25 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     } catch (e) {
       flush(true);
       if (full) return full.trim();
-      const m = "지금은 두뇌 연결이 불안정해요. 통신 상태를 확인해 주세요."; onDelta(m); onSentence(m); return m;
+      const m = opts.fallback || "지금 두뇌 연결이 불안정해. 통신 상태 확인해 줘."; onDelta(m); onSentence(m); return m;
     } finally { clearTimeout(to); if (curCtrl === ctrl) curCtrl = null; }
   }
 
   const LOOK_RE = /(앞|전방|보여|보이|보니|봐|상황|신호|도로|차선|막혀|밀려|무슨 차|뭐가 있)/;
   let lastUserAt = 0;
   // 한 번의 '턴': 질문(또는 브리핑 지시) → 스트리밍 답변 → 문장 단위로 읽기
-  async function turn(text, { image = null, maxTokens = 250, label = null, histText = null, quiet = false } = {}) {
+  async function turn(text, { image = null, maxTokens = 250, label = null, histText = null, quiet = false, timeoutMs = 20000, fallback = null } = {}) {
     if (thinking) return null;
-    thinking = true; const my = ++askSeq;
+    thinking = true; const my = ++askSeq; const opts = { timeoutMs, fallback };
+    dlog("턴 시작", short(label || text));
     $("heard").textContent = label || ("▶ " + text); $("said").textContent = quiet ? "…" : "생각 중…";
-    stopSpeaking(); pauseListening();
+    stopSpeaking("새 턴"); pauseListening();
     if (!quiet) SFX.thinkStart();
     let first = true;
     const reply = await brainStream(text, maxTokens,
       (full) => { if (my === askSeq) $("said").textContent = full; },
-      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.thinkStop(); SFX.chirp(); } speakChunk(sentence); }, image, histText);
-    SFX.thinkStop();
-    thinking = false;
+      (sentence) => { if (my !== askSeq) return; if (first) { first = false; SFX.hush(); } speakChunk(sentence); }, image, histText, opts);
+    thinking = false; dlog("턴 끝", short(reply));
     if (!ttsPending) resumeListening();
     return reply;
   }
@@ -411,32 +436,46 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     convoTouch();
   }
 
-  // ---------- 정기 브리핑: 설정한 간격마다 아스라다가 먼저 말을 건다 ----------
-  const BRIEF = { on: false, last: 0, evSince: 0 };
-  const briefEvery = () => { const v = +store.get("asurada_brief_s", "60"); return v >= 3 ? v : 60; };
-  const EV_KO = { hard_brake: "급제동", hard_accel: "급가속", sharp_corner: "급코너", fcw: "앞차 급접근", close: "차간거리 가까움", pedestrian: "보행자", lead_departed: "앞차 출발", light_green: "신호 변경" };
-  const BRIEF_PROMPT = `정기 브리핑 시간이다. 주인님이 묻지 않았지만 아스라다가 먼저 말을 건넨다.
-지난 브리핑 이후의 주행(속도, 가감속, 이벤트)과 지금 상황(전방 화면 이미지가 있으면 그것도)을 바탕으로 한두 문장으로 말해라.
-직전 브리핑과 같은 말을 반복하지 말고 변화나 눈에 띄는 점 위주로. 특별한 게 없으면 짧은 상태 보고나 가벼운 한마디면 충분하다. 운전에 방해되지 않게 짧게.`;
-  function setBrief(on) {
-    BRIEF.on = on; BRIEF.last = Date.now() / 1000; BRIEF.evSince = BRIEF.last;
-    $("btnBrief").classList.toggle("recording", on);
-    $("btnBrief").textContent = on ? `🗣 브리핑 중 (${briefEvery()}초)` : "🗣 정기 브리핑";
-    say(on ? `${briefEvery() >= 60 ? briefEvery() / 60 + "분" : briefEvery() + "초"}마다 상황을 알려 드릴게요, 주인님.` : "정기 브리핑을 멈출게요, 주인님.");
-  }
-  setInterval(async () => {
-    if (!BRIEF.on) return;
+  // ---------- 상황 알림: 주변에 무슨 일이 생기면 그때 말한다 ----------
+  // 긴급(앞차 급정거, 끼어들기, 바로 앞 사람)은 바로 고정 문구로, 나머지는 Claude가 화면을 보고 자연스럽게 한 문장으로.
+  const NOTE = { pending: [], timer: null, cool: {} };
+  const noteOpt = (k) => store.get("asurada_note_" + k, "1") === "1";
+  const NOTE_PROMPT = `상황 알림이다. 방금 아래 일이 감지됐다. 첨부된 전방 화면이 있으면 보고, 주인님에게 반말로 딱 한 문장, 짧게 알려라.
+위치(왼쪽/정면/오른쪽)나 거리감이 보이면 넣어라. 화면에서 확인이 안 되면 감지 내용만 간단히 말해라. 인사나 군더더기 없이 바로 본론.`;
+  function notify(kind, cat, text, { urgent = false, cool = 8, detail = "", ai = true } = {}) {
+    if (!$("optAlert").checked || !noteOpt(cat)) return;
     const now = Date.now() / 1000;
-    if (now - BRIEF.last < briefEvery()) return;
-    // 대화 중이거나 말하는 중이면 조금 미룬다
-    if (thinking || ttsPending || utterBuf || now - lastUserAt < 15 || (window.speechSynthesis && speechSynthesis.speaking)) return;
-    BRIEF.last = now;
-    const ev = T.events.filter((e) => e.t > BRIEF.evSince); BRIEF.evSince = now;
-    const evText = ev.length ? "지난 브리핑 이후 이벤트: " + ev.map((e) => EV_KO[e.kind] || e.kind).join(", ") : "지난 브리핑 이후 이벤트 없음";
-    const image = VISION.on && store.get("asurada_brief_cam", "1") === "1" ? grabFrame() : null;
-    const reply = await turn(`${BRIEF_PROMPT}\n${evText}`, { image, maxTokens: 150, label: "🗣 정기 브리핑", histText: "(정기 브리핑 요청)", quiet: true });
-    if (T.active && reply) T.log.push(["brief", now, reply]);
-  }, 2000);
+    if ((NOTE.cool[kind] || 0) > now) return;
+    NOTE.cool[kind] = now + cool;
+    dlog("알림", kind, urgent ? "(긴급)" : "", short(detail || text));
+    if (T.active) T.events.push({ kind, t: now, speed: S.speed, lat: S.lat, lon: S.lon, detail: detail || text });
+    if (urgent) {
+      askSeq++; if (curCtrl) curCtrl.abort();
+      stopSpeaking("긴급 알림"); NOTE.pending = [];
+      $("heard").textContent = "⚠ " + text; alertThenSay(text);
+      return;
+    }
+    NOTE.pending.push({ text, detail: detail || text, t: now, ai });
+    clearTimeout(NOTE.timer); NOTE.timer = setTimeout(flushNotes, 700); // 거의 동시에 생긴 일은 묶어서 한 번에
+  }
+  async function flushNotes() {
+    const now = Date.now() / 1000;
+    NOTE.pending = NOTE.pending.filter((n) => now - n.t < 10); // 10초 지난 알림은 버림
+    if (!NOTE.pending.length) return;
+    if (thinking || ttsPending || utterBuf) { clearTimeout(NOTE.timer); NOTE.timer = setTimeout(flushNotes, 600); return; }
+    const items = NOTE.pending; NOTE.pending = [];
+    const quick = items.map((i) => i.text).join(" ");
+    if (!API_KEY || store.get("asurada_note_ai", "1") !== "1" || items.every((i) => !i.ai)) {
+      $("heard").textContent = "📢 " + quick; alertThenSay(quick); return;
+    }
+    SFX.alert();
+    const image = VISION.on ? grabFrame() : null;
+    await new Promise((r) => setTimeout(r, 300));
+    const reply = await turn(`${NOTE_PROMPT}\n감지: ${items.map((i) => i.detail).join(" / ")}`, {
+      image, maxTokens: 90, label: "📢 " + quick, histText: `(상황 알림: ${quick})`, quiet: true, timeoutMs: 5000, fallback: quick,
+    });
+    if (T.active && reply) T.log.push(["note", now, quick, reply]);
+  }
 
   // ---------- 전방 카메라 (폰 안에서 물체 감지 + 물어보면 Claude가 화면을 봄) ----------
   // 라이브러리는 CDN에서 받되, 무결성 해시(SRI)로 파일이 바뀌면 실행되지 않게 막는다 (API 키 보호)
@@ -445,7 +484,11 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     ["https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js", "sha384-7qLdgfEQyO9ZQi9ArRHigK+IBto4XPk468jAqc+fnsXaZIcMAhQeLwzggRK7aESl"],
   ];
   const VEH = new Set(["car", "truck", "bus", "motorcycle"]), VRU = new Set(["person", "bicycle"]);
-  const KO = { car: "승용차", truck: "트럭", bus: "버스", motorcycle: "오토바이", person: "보행자", bicycle: "자전거", "traffic light": "신호등", "stop sign": "정지 표지" };
+  const KO = { car: "승용차", truck: "트럭", bus: "버스", motorcycle: "오토바이", person: "사람", bicycle: "자전거", "traffic light": "신호등", "stop sign": "정지 표지",
+               dog: "강아지", cat: "고양이", horse: "말", cow: "소", sheep: "양", bird: "새", "sports ball": "공", skateboard: "킥보드·스케이트보드" };
+  const OBJ = new Set(["dog", "cat", "horse", "cow", "sheep", "sports ball", "skateboard", "stop sign"]);
+  const PEOPLE = new Set(["person", "bicycle", "motorcycle"]);
+  const posOf = (d) => (d.cx < 0.35 ? "왼쪽" : d.cx > 0.65 ? "오른쪽" : "정면");
   const VISION = { on: false, model: null, stream: null, busy: false, timer: null, dets: [], lead: null, leadHist: [],
                    stopSince: 0, light: null, lightPrev: null, cool: {}, fps: 0, lastT: 0, W: 0, H: 0 };
 
@@ -461,7 +504,6 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     for (const l of LIBS) await loadScript(l);
     return await window.cocoSsd.load({ base: "lite_mobilenet_v2" });
   }
-  const visOpt = (k) => store.get("asurada_vis_" + k, "1") === "1";
 
   async function visionOn() {
     $("visStatus").textContent = "카메라 켜는 중…"; $("vision").hidden = false;
@@ -502,14 +544,6 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     VISION.timer = setTimeout(visionLoop, 250); // 약 4fps: 배터리·발열 절약
   }
 
-  function visAlert(key, text, coolS) {
-    const now = Date.now() / 1000;
-    if ((VISION.cool[key] || 0) > now) return;
-    VISION.cool[key] = now + coolS;
-    if (T.active) T.events.push({ kind: key, g: 0, speed: S.speed, t: now, lat: S.lat, lon: S.lon });
-    if ($("optAlert").checked && !thinking) { SFX.alert(); say(text, true); }
-  }
-
   function analyze(raw, t) {
     const W = VISION.W || 1, H = VISION.H || 1;
     const dets = raw.map((d) => {
@@ -517,15 +551,16 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       return { cls: d.class, score: d.score, x: x / W, y: y / H, w: w / W, h: h / H, cx: (x + w / 2) / W, by: (y + h) / H, bbox: d.bbox };
     });
     VISION.dets = dets;
-    const v = S.speed || 0;
+    const v = S.speed || 0, kmh = Math.round(v * 3.6);
 
-    // 1) 앞차: 화면 가운데에 있는 가장 큰 차량
+    // ── 앞차: 화면 가운데에 있는 가장 큰 차량
+    const prevLead = VISION.lead;
     const lead = dets.filter((d) => VEH.has(d.cls) && d.cx > 0.3 && d.cx < 0.7 && d.by > 0.4).sort((a, b) => b.w - a.w)[0] || null;
     VISION.lead = lead;
     if (lead) VISION.leadHist.push([t, lead.w]); else VISION.leadHist = [];
     VISION.leadHist = VISION.leadHist.filter(([tt]) => t - tt <= 1.5);
 
-    // 앞차 급접근: 박스 폭이 커지는 속도로 충돌까지 남은 시간(TTC)을 추정
+    // 앞차 급정거·급접근: 박스 폭이 커지는 속도로 충돌까지 남은 시간(TTC) 추정
     let ttc = null;
     const hst = VISION.leadHist;
     if (hst.length >= 4) {
@@ -535,30 +570,56 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       if (slope > 0.005) ttc = hst[n - 1][1] / slope;
     }
     VISION.ttc = ttc;
-    if (visOpt("fcw") && lead && v > 4 && ttc !== null && ttc < 2.2 && lead.w > 0.12) visAlert("fcw", "앞차 급접근, 주의.", 6);
-    else if (visOpt("fcw") && lead && v > 8 && lead.w > 0.5 && (VISION.cool.fcw || 0) < Date.now() / 1000) visAlert("close", "앞차와 거리가 가까워요.", 20);
+    if (lead && v > 4 && ttc !== null && ttc < 2.2 && lead.w > 0.12) notify("fcw", "car", "앞차 급정거! 조심해.", { urgent: true, cool: 6 });
+    else if (lead && v > 8 && lead.w > 0.5) notify("close", "car", "앞차랑 너무 붙었어.", { cool: 20, ai: false });
 
-    // 2) 보행자·자전거: 가운데, 가까이(박스가 큼), 주행 중
-    const vru = dets.find((d) => VRU.has(d.cls) && d.cx > 0.25 && d.cx < 0.75 && d.h > 0.25);
-    if (visOpt("ped") && vru && v > 2) visAlert("pedestrian", `전방 ${KO[vru.cls]} 주의.`, 8);
+    // 끼어들기: 앞차가 없거나 작았는데 갑자기 가까운 차가 정면에 나타남
+    if (lead && v > 5 && lead.w > 0.25 && (!prevLead || prevLead.w < lead.w * 0.6) && Math.abs(lead.cx - (prevLead ? prevLead.cx : 0.5)) > 0.08)
+      notify("cutin", "car", "앞에 차 끼어들었어!", { urgent: true, cool: 8 });
 
-    // 3) 정차 중 앞차 출발: 3초 이상 정지 + 앞차 박스가 2초 사이 15% 이상 작아짐
+    // 정차 중 앞차 출발: 3초 이상 정지 + 앞차 박스가 2초 사이 15% 이상 작아짐
     if (v < 0.5) { if (!VISION.stopSince) VISION.stopSince = t; } else VISION.stopSince = 0;
     const stopped = VISION.stopSince && t - VISION.stopSince > 3;
     if (lead) {
       VISION.leadW2 = (VISION.leadW2 || []).filter(([tt]) => t - tt <= 2.2); VISION.leadW2.push([t, lead.w]);
       const old = VISION.leadW2[0];
-      if (visOpt("depart") && stopped && old && t - old[0] > 1.5 && lead.w < old[1] * 0.85 && old[1] > 0.12) visAlert("lead_departed", "앞차가 출발했어요, 주인님.", 15);
+      if (stopped && old && t - old[0] > 1.5 && lead.w < old[1] * 0.85 && old[1] > 0.12) notify("lead_departed", "depart", "앞차 출발했어, 주인님.", { cool: 15, ai: false });
     } else VISION.leadW2 = [];
 
-    // 4) 신호등 색: 화면 위쪽의 가장 큰 신호등에서 켜진 불빛 색을 셈
+    // ── 신호 변화: 같은 색이 두 번 연속 보이면 '확정', 확정 색이 바뀌면 알림
     const tl = dets.filter((d) => d.cls === "traffic light" && d.y < 0.6).sort((a, b) => b.w * b.h - a.w * a.h)[0];
     const color = tl ? lightColor(tl.bbox) : null;
-    if (color) {
-      if (visOpt("light") && stopped && VISION.light === "red" && color === "green") visAlert("light_green", "신호 바뀌었어요.", 15);
-      VISION.light = color;
-    }
     VISION.lightNow = color;
+    if (color && color === VISION.lightPrevRaw) {
+      if (color !== VISION.lightStable) {
+        const before = VISION.lightStable; VISION.lightStable = color;
+        const say1 = { green: "초록불로 바뀌었어.", yellow: "노란불이야, 주의해.", red: "빨간불로 바뀌었어." }[color];
+        if (before) notify("light_" + color, "light", say1, { cool: 4, ai: false });
+        else if (color === "red" && v > 3) notify("light_red_ahead", "light", "앞에 빨간불이야.", { cool: 20, ai: false });
+      }
+    }
+    VISION.lightPrevRaw = color;
+    if (!tl) { VISION.noLight = (VISION.noLight || 0) + 1; if (VISION.noLight > 12) VISION.lightStable = null; } else VISION.noLight = 0;
+
+    // ── 사람·자전거·오토바이
+    const ppl = dets.filter((d) => PEOPLE.has(d.cls) && !(d.cls === "motorcycle" && d === lead));
+    const near = ppl.find((d) => d.cx > 0.3 && d.cx < 0.7 && d.h > 0.3 && d.by > 0.55);
+    if (near && v > 2) notify("ped_close", "person", `앞에 ${KO[near.cls]}! 조심해.`, { urgent: true, cool: 6 });
+    VISION.pplHist = (VISION.pplHist || []).filter(([tt]) => t - tt <= 2);
+    const prevMax = VISION.pplHist.reduce((m, [, n]) => Math.max(m, n), 0);
+    VISION.pplHist.push([t, ppl.length]);
+    if (ppl.length > prevMax && ppl.length > 0) {
+      const big = ppl.slice().sort((a, b) => b.h - a.h)[0];
+      notify("people", "person", `${posOf(big)}에 ${KO[big.cls]} 있어.`, { cool: 10,
+        detail: `${ppl.map((d) => KO[d.cls]).join(", ")} 감지 (가장 가까운 것: ${posOf(big)}, 화면 높이의 ${Math.round(big.h * 100)}%), 내 속도 ${kmh}km/h` });
+    }
+
+    // ── 사물(동물·공·킥보드·정지 표지): 새로 나타난 종류만
+    VISION.objSeen = VISION.objSeen || {};
+    dets.filter((d) => OBJ.has(d.cls)).forEach((d) => {
+      const last = VISION.objSeen[d.cls] || 0; VISION.objSeen[d.cls] = t;
+      if (t - last > 3) notify("obj_" + d.cls, "object", `${posOf(d)}에 ${KO[d.cls]} 있어.`, { cool: 15, detail: `${KO[d.cls]} 감지, 위치 ${posOf(d)}, 내 속도 ${kmh}km/h` });
+    });
   }
 
   const probe = document.createElement("canvas"), pctx = probe.getContext("2d", { willReadFrequently: true });
@@ -672,7 +733,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       T.id = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
       history.length = 0;
       autosave = setInterval(() => saveTrip(), 30000); // 앱이 꺼져도 30초 단위로 남김
-      say("주행 기록 시작합니다. 안전 운전해요.");
+      say("주행 기록 시작할게. 안전 운전해.");
     } else {
       T.active = false; T.endedAt = Date.now() / 1000; clearInterval(autosave);
       await saveTrip();
@@ -744,12 +805,9 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       if (S.lonG < -0.15) kind = "hard_brake"; else if (S.lonG > 0.15) kind = "hard_accel"; else if (Math.abs(S.latG) > 0.2) kind = "sharp_corner";
       if (kind) {
         S.lastEventAt = now; S.holdCount = 0;
-        if (T.active) T.events.push({ kind, g: +hG.toFixed(2), speed: S.speed, t: now / 1000, lat: S.lat, lon: S.lon });
-        if ($("optAlert").checked && !speechSynthesis.speaking) {
-          const g1 = hG.toFixed(1);
-          SFX.alert();
-          say({ hard_brake: `급제동, ${g1}G.`, hard_accel: `급가속, ${g1}G.`, sharp_corner: `코너 횡G ${g1}.` }[kind], true);
-        }
+        const g1 = hG.toFixed(1), kmh = Math.round((S.speed || 0) * 3.6);
+        notify(kind, "self", { hard_brake: `급정거, ${g1}G.`, hard_accel: `급출발, ${g1}G.`, sharp_corner: `급코너, 횡G ${g1}.` }[kind],
+          { cool: 6, detail: `내 차 ${{ hard_brake: "급정거", hard_accel: "급출발(급가속)", sharp_corner: "급코너" }[kind]} ${g1}G, 속도 약 ${kmh}km/h` });
       }
     }
     $("hg").textContent = S.curHG.toFixed(2); $("lg").textContent = S.lonG.toFixed(2); $("tg").textContent = S.latG.toFixed(2);
@@ -785,20 +843,26 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
   // 문장 단위 큐: 스트리밍으로 들어온 문장을 끊김 없이 이어서 읽는다
   let ttsPending = 0, ttsGen = 0;
-  function speakChunk(text) {
+  function speakChunk(text, retry = 0) {
     if (!text || !("speechSynthesis" in window)) return;
     const u = new SpeechSynthesisUtterance(text), gen = ttsGen;
     u.lang = "ko-KR"; try { if (koVoice) u.voice = koVoice; } catch (_) {} u.pitch = VOICE.pitch; u.rate = VOICE.rate;
     ttsPending++;
-    u.onstart = () => { $("said").classList.add("speaking"); pauseListening(); };
-    u.onend = u.onerror = () => {
-      if (gen !== ttsGen) return;
+    u.onstart = () => { dlog("TTS▶", short(text)); SFX.hush(); $("said").classList.add("speaking"); pauseListening(); };
+    const done = (e) => {
+      const err = e && e.type === "error" ? e.error || "error" : null;
+      if (gen !== ttsGen) { dlog("TTS(우리가 취소)", short(text)); return; }
+      dlog(err ? "TTS✖ " + err : "TTS■", short(text));
       ttsPending = Math.max(0, ttsPending - 1);
+      // 우리가 취소한 게 아닌데 끊겼다면(다른 소리·마이크가 오디오를 가져감) 한 번 다시 읽는다
+      if (err && retry < 1) { dlog("TTS 재시도", short(text)); setTimeout(() => { if (gen === ttsGen) speakChunk(text, retry + 1); }, 250); return; }
       if (!ttsPending) { $("said").classList.remove("speaking"); if (!thinking) resumeListening(); }
     };
+    u.onend = done; u.onerror = done;
     speechSynthesis.speak(u);
   }
-  function stopSpeaking() {
+  function stopSpeaking(reason = "") {
+    if (ttsPending || (window.speechSynthesis && speechSynthesis.speaking)) dlog("말 중단:", reason || "?");
     ttsGen++; ttsPending = 0; $("said").classList.remove("speaking");
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
@@ -808,7 +872,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function say(text, isAlert = false) {
     if (!text) return;
     $("said").textContent = text;
-    if (!isAlert) stopSpeaking();
+    if (!isAlert) stopSpeaking("새 발화");
     splitSentences(text).forEach((t) => speakChunk(t));
   }
   // TTS가 끝났다는 신호를 안 보내고 멈추는 경우(안드로이드) 대비: 3초간 실제로 말하지 않으면 상태를 풀어 준다
@@ -827,7 +891,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function makeRec(continuous) {
     const r = new SR();
     r.lang = "ko-KR"; r.interimResults = true; r.continuous = continuous;
-    r.onstart = () => { if (r !== rec) return; if (recMode === "convo" || recMode === "ptt") SFX.listen(); recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
+    r.onstart = () => { dlog("MIC▶", recMode, r._dead ? "(죽은 인식기)" : ""); if (r !== rec) return; if (recMode === "convo" || recMode === "ptt") SFX.listen(); recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
     r.onresult = (e) => {
       if (r !== rec || r._dead) return;
       // 결과 전체를 다시 이어 붙인다. 안드로이드는 같은 내용을 누적해서 반복 전달하는 경우가 있어 중복을 걸러낸다.
@@ -843,8 +907,9 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       clearTimeout(utterTimer);
       utterTimer = setTimeout(() => commitUtterance(r), VOICE.endMs);
     };
-    r.onerror = (e) => { if (e.error === "not-allowed") { S.micOk = false; sensorsLine(); } };
+    r.onerror = (e) => { dlog("MIC✖", e.error); if (e.error === "not-allowed") { S.micOk = false; sensorsLine(); } };
     r.onend = () => {
+      dlog("MIC■", r._dead ? "(끊음)" : "");
       if (r !== rec) return;
       if (!r._dead && utterBuf.trim()) commitUtterance(r);   // 인식기가 스스로 끝난 경우 남은 말을 넘긴다
       recRunning = false; $("btnTalk").classList.remove("listening"); $("btnConvo").classList.remove("listening");
@@ -859,7 +924,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (r._dead) { utterBuf = ""; return; }
     const text = utterBuf.trim(); utterBuf = "";
     if (!text) return;
-    r._dead = true; lastUserAt = Date.now() / 1000;
+    r._dead = true; lastUserAt = Date.now() / 1000; dlog("들은 말:", short(text));
     if (recMode !== "wake" || text.replace(/\s/g, "").includes(CFG.wakeWord) || Date.now() < awaitingUntil) SFX.ack();
     handleUtterance(text);
     // 인식기에 쌓인 결과를 비우기 위해 한 번 끊고 다시 시작한다 (onend에서 자동 재시작)
@@ -870,7 +935,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (recMode === "ptt") { ask(text); return; }
     if (recMode === "convo") {
       const clean = text.replace(/[.!?,~]/g, "").trim();
-      if (STOP_RE.test(clean)) { setConvo(false); say("대화 모드를 마칠게요, 주인님."); return; }
+      if (STOP_RE.test(clean)) { setConvo(false); say("대화 모드 끝낼게, 주인님."); return; }
       if (clean.length < 2 || thinking || ttsPending) return;
       convoTouch();
       ask(text.replace(new RegExp("^\\s*" + CFG.wakeWord + "(야|아)?[\\s,.!?~]*"), "").trim() || text);
@@ -878,7 +943,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     }
     if (text.replace(/\s/g, "").includes(CFG.wakeWord)) {
       const rest = text.split(CFG.wakeWord).slice(1).join(" ").replace(/^(야|아)?[\s,.!?~]*/, "").trim();
-      if (rest.length > 1) ask(rest); else { awaitingUntil = Date.now() + 8000; say("네, 주인님.", true); }
+      if (rest.length > 1) ask(rest); else { awaitingUntil = Date.now() + 8000; say("응, 주인님.", true); }
     } else if (Date.now() < awaitingUntil) { awaitingUntil = 0; ask(text); }
   }
   function startListening() {
@@ -890,14 +955,14 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   function pauseListening() {
     if ((recMode === "wake" || recMode === "convo") && rec && !rec._dead) {
       rec._dead = true; clearTimeout(utterTimer); utterBuf = "";
-      try { rec.abort(); } catch (_) {}
+      dlog("MIC 끊기(말하기 전)"); try { rec.abort(); } catch (_) {}
     }
   }
   function resumeListening() { setTimeout(startListening, 350); }
   function startPTT() {
-    if (!SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
+    if (!SR) { say("이 브라우저는 음성 인식을 지원 안 해."); return; }
     askSeq++; if (curCtrl) curCtrl.abort(); SFX.thinkStop();   // 말하는 중이면 끊고 바로 듣기 (끼어들기)
-    stopSpeaking();
+    stopSpeaking("말하기 버튼(끼어들기)");
     clearTimeout(utterTimer); utterBuf = "";
     const old = rec; recMode = "ptt"; rec = makeRec(true); recRunning = false;   // 중간에 쉬어도 끊기지 않게 연속 인식
     try { old && old.abort(); } catch (_) {}
@@ -909,17 +974,17 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   }
   function convoTouch() {
     clearTimeout(convoTimer);
-    if (convo) convoTimer = setTimeout(() => { setConvo(false); say("한동안 말씀이 없어서 대화 모드를 쉴게요, 주인님.", true); }, 120000);
+    if (convo) convoTimer = setTimeout(() => { setConvo(false); say("한동안 조용해서 대화 모드 쉴게, 주인님.", true); }, 120000);
   }
   function setConvo(on) {
-    if (on && !SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
+    if (on && !SR) { say("이 브라우저는 음성 인식을 지원 안 해."); return; }
     convo = on; clearTimeout(utterTimer); utterBuf = "";
     $("btnConvo").classList.toggle("recording", on);
     $("btnConvo").textContent = on ? "💬 대화 중 (끄기)" : "💬 대화 모드";
     const old = rec; rec = null; recRunning = false;
     try { old && old.abort(); } catch (_) {}
     recMode = baseMode();
-    if (on) { convoTouch(); say("네, 주인님. 편하게 말씀하세요."); }
+    if (on) { convoTouch(); say("응, 주인님. 편하게 말해."); }
     else { clearTimeout(convoTimer); resumeListening(); }
   }
 
@@ -937,6 +1002,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   let wakeLock = null;
   async function keepAwake() { try { wakeLock = await navigator.wakeLock.request("screen"); } catch (_) {} }
   document.addEventListener("visibilitychange", () => {
+    dlog("화면", document.visibilityState);
     if (document.visibilityState === "visible" && wakeLock !== null) keepAwake();
     if (document.visibilityState === "hidden" && T.active) saveTrip();
   });
@@ -953,17 +1019,25 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     if (navigator.geolocation) navigator.geolocation.watchPosition(onFix, () => { S.gpsOk = false; sensorsLine(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     SFX.init(); SFX.boot();
     keepAwake(); setInterval(tick, CFG.tickMs);
-    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnVision").disabled = false; $("btnBrief").disabled = false; $("btnStart").style.display = "none";
+    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnVision").disabled = false; $("btnStart").style.display = "none";
     recMode = baseMode();
-    say(API_KEY ? "아스라다, 온라인. 준비됐습니다, 주인님." : "아스라다, 목업 모드로 시작해요. 설정에서 API 키를 넣으면 대화할 수 있어요.");
+    setTimeout(() => say(API_KEY ? "아스라다, 온라인. 준비됐어, 주인님." : "아스라다, 목업 모드로 시작할게. 설정에서 API 키를 넣으면 대화할 수 있어."), 1300); // 부팅음 끝난 뒤
   };
   $("btnTalk").onclick = startPTT;
   $("btnTrip").onclick = tripToggle;
   $("btnConvo").onclick = () => setConvo(!convo);
-  $("btnBrief").onclick = () => setBrief(!BRIEF.on);
+  ["car", "depart", "light", "person", "object", "self"].forEach((k) => { const el = $("note_" + k); el.checked = noteOpt(k); el.onchange = () => store.set("asurada_note_" + k, el.checked ? "1" : "0"); });
+  $("note_ai").checked = store.get("asurada_note_ai", "1") === "1";
+  $("note_ai").onchange = (e) => store.set("asurada_note_ai", e.target.checked ? "1" : "0");
+  $("btnDiag").onclick = () => { const o = $("diagOut"); o.hidden = false; o.value = DIAG.slice().reverse().join("\n") || "(기록 없음)"; };
+  $("btnDiagCopy").onclick = async () => {
+    const txt = `[아스라다 진단] ${navigator.userAgent}\n` + DIAG.join("\n");
+    try { await navigator.clipboard.writeText(txt); $("btnDiagCopy").textContent = "복사됨 ✓"; }
+    catch (_) { const o = $("diagOut"); o.hidden = false; o.value = txt; o.select(); $("btnDiagCopy").textContent = "길게 눌러 복사"; }
+    setTimeout(() => ($("btnDiagCopy").textContent = "복사"), 2000);
+  };
   $("btnVision").onclick = () => (VISION.on ? visionOff() : visionOn());
-  $("btnLook").onclick = () => { if (!VISION.on) { say("먼저 전방 인식을 켜 주세요, 주인님."); return; } stopSpeaking(); ask("지금 앞 상황을 짧게 알려줘.", true); };
-  ["fcw", "ped", "depart", "light"].forEach((k) => { const el = $("vis_" + k); el.checked = visOpt(k); el.onchange = () => store.set("asurada_vis_" + k, el.checked ? "1" : "0"); });
+  $("btnLook").onclick = () => { if (!VISION.on) { say("먼저 전방 인식을 켜 줘, 주인님."); return; } stopSpeaking("앞 상황 버튼"); ask("지금 앞 상황을 짧게 알려줘.", true); };
   $("optWake").onchange = () => {
     if (convo) return;
     const old = rec; rec = null; recRunning = false;
@@ -973,7 +1047,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // 설정 패널
   $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL;
-    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); $("inBrief").value = String(briefEvery()); $("optBriefCam").checked = store.get("asurada_brief_cam", "1") === "1"; voiceLabels(); renderTrips(); };
+    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; $("inEnd").value = VOICE.endMs / 1000; $("optSfx").checked = store.get("asurada_sfx", "1") === "1"; $("inStyle").value = store.get("asurada_style", "normal"); voiceLabels(); renderTrips(); };
   function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); $("endVal").textContent = (+$("inEnd").value).toFixed(1); }
   function applyVoiceInputs() {
     VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value; VOICE.endMs = Math.round(+$("inEnd").value * 1000);
@@ -994,23 +1068,22 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
       $("inPitch").value = 1.0; $("inRate").value = 1.0; note = "여성 톤으로 바꿨어요.";
     }
     voiceLabels(); applyVoiceInputs(); $("voiceNote").textContent = note + " 저장을 눌러야 유지돼요.";
-    say(kind === "male" ? "아스라다, 남성 톤입니다, 주인님." : "아스라다, 여성 톤입니다, 주인님.");
+    say(kind === "male" ? "아스라다, 남성 톤이야, 주인님." : "아스라다, 여성 톤이야, 주인님.");
   }
   $("btnMale").onclick = () => applyPreset("male");
   $("btnRobot").onclick = () => {
     $("inPitch").value = 0.7; $("inRate").value = 1.1; $("optSfx").checked = true; $("inStyle").value = "machine";
     store.set("asurada_sfx", "1"); voiceLabels(); applyVoiceInputs(); SFX.init();
     $("voiceNote").textContent = "기계음 모드: 낮고 빠른 톤 + 보고체 말투 + 효과음. 저장을 눌러야 유지돼요.";
-    SFX.chirp(); setTimeout(() => say("시스템 확인. 아스라다, 기계 모드로 전환합니다, 주인님."), 120);
+    SFX.chirp(); setTimeout(() => say("시스템 확인. 아스라다, 기계 모드로 전환한다, 주인님."), 120);
   };
   $("optSfx").onchange = (e) => { store.set("asurada_sfx", e.target.checked ? "1" : "0"); SFX.init(); SFX.listen(); };
   $("btnFemale").onclick = () => applyPreset("female");
-  $("btnPreview").onclick = () => { applyVoiceInputs(); say("아스라다, 온라인. 준비됐습니다, 주인님."); };
+  $("btnPreview").onclick = () => { applyVoiceInputs(); say("아스라다, 온라인. 준비됐어, 주인님."); };
   $("btnSave").onclick = () => {
     API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
     store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
-    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value); store.set("asurada_brief_s", $("inBrief").value); store.set("asurada_brief_cam", $("optBriefCam").checked ? "1" : "0");
-    if (BRIEF.on) $("btnBrief").textContent = `🗣 브리핑 중 (${briefEvery()}초)`;
+    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate)); store.set("asurada_endms", String(VOICE.endMs)); store.set("asurada_style", $("inStyle").value);
     $("panel").hidden = true; sensorsLine(); renderTrip();
   };
   $("btnTest").onclick = async () => {
