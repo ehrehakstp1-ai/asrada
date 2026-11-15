@@ -42,7 +42,8 @@ button.primary{grid-column:span 2;background:var(--accent);border-color:var(--ac
 button.talk{grid-column:span 2;font-size:22px;padding:22px}
 button.talk.listening{background:var(--accent);border-color:var(--accent)}
 button.recording{border-color:var(--ok);color:var(--ok)}
-.toggles{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--dim);justify-content:center}
+.toggles{grid-column:span 2;display:flex;flex-direction:row;gap:16px;font-size:13px;color:var(--dim);justify-content:center}
+button.listening{box-shadow:0 0 0 3px rgba(61,220,151,.6)}
 .sensors{grid-column:span 2;font-size:11px;color:var(--dim);text-align:center}
 header .right{display:flex;gap:8px;align-items:center}
 .gear{padding:6px 12px;font-size:14px;border-radius:99px}
@@ -52,6 +53,8 @@ header .right{display:flex;gap:8px;align-items:center}
 #panel p{font-size:12px;color:var(--dim);line-height:1.6;margin:6px 0}
 #panel .row{display:flex;gap:8px;margin-top:10px}
 #panel .row button{flex:1;padding:12px;font-size:15px}
+#panel select{width:100%;font:inherit;font-size:15px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
+#panel input[type=range]{padding:0;accent-color:var(--accent)}
 #testOut{font-size:14px;margin-top:8px;min-height:20px}
 .triprow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
@@ -85,6 +88,7 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <button id="btnStart" class="primary">시작</button>
   <button id="btnTalk" class="talk" disabled>🎙 말하기</button>
   <button id="btnTrip" disabled>주행 시작</button>
+  <button id="btnConvo" disabled>💬 대화 모드</button>
   <div class="toggles">
     <label><input type="checkbox" id="optWake"> “아스라다” 호출어</label>
     <label><input type="checkbox" id="optAlert" checked> 이벤트 음성 경고</label>
@@ -99,8 +103,17 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   <p>키는 이 폰의 브라우저에만 저장되고, Anthropic 서버로만 전송됩니다. 아스라다 전용 키를 새로 만들고 콘솔에서 월 사용 한도를 걸어 두세요.</p>
   <h2>모델</h2>
   <input id="inModel" placeholder="claude-sonnet-5-5">
+  <p>대화 반응을 더 빠르게 하려면 <b>claude-haiku-5-5</b>를 넣어 보세요. 더 빠르고 저렴하지만 분석은 조금 단순해져요.</p>
   <div class="row"><button id="btnTest">연결 테스트</button><button id="btnSave" class="primary">저장</button></div>
   <div id="testOut"></div>
+  <h2>목소리</h2>
+  <select id="inVoice"></select>
+  <p>높이 <b id="pitchVal">0.85</b> (낮을수록 차분한 기계음 느낌)</p>
+  <input id="inPitch" type="range" min="0.5" max="1.5" step="0.05" value="0.85">
+  <p>속도 <b id="rateVal">1.00</b></p>
+  <input id="inRate" type="range" min="0.7" max="1.4" step="0.05" value="1.0">
+  <div class="row"><button id="btnPreview">🔊 미리 듣기</button></div>
+  <p>폰에 설치된 한국어 음성 중에서 고를 수 있어요. 음성이 하나뿐이면 폰 설정의 '텍스트 음성 변환'에서 다른 음성을 내려받으면 목록에 추가돼요. 저장을 눌러야 유지됩니다.</p>
   <h2>주행 기록</h2>
   <p>기록은 이 폰 안에만 저장됩니다. JSON으로 내려받아 분석할 수 있어요.</p>
   <div id="tripList"></div>
@@ -209,17 +222,18 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
   }
 
   // ---------- 두뇌 (구 server/brain.py) ----------
-  const PERSONA = `당신은 '아스라다'. 드라이버 옆에서 함께 달리는 차량 AI 파트너다.
+  const PERSONA = `당신은 '아스라다'. 주인님 옆에서 함께 달리는 차량 AI 파트너다.
 차는 볼보 EX90(전기 SUV)이고, 당신은 차량을 직접 제어하지 않는 관찰자이자 코치다.
-센서는 드라이버의 스마트폰(GPS, 가속도계)뿐이며, 배터리·타이어 등 차량 내부 데이터는 볼 수 없다.
+센서는 주인님의 스마트폰(GPS, 가속도계)뿐이며, 배터리·타이어 등 차량 내부 데이터는 볼 수 없다.
 
 말하기 규칙:
 - 답은 음성으로 읽힌다. 주행 중에는 1~2문장, 짧고 또렷하게. 마크다운·이모지·목록 금지.
 - 숫자는 반올림해서 말한다 (예: 0.42G → 0.4G, 63.7km/h → 64킬로).
-- 드라이버를 '드라이버'라고 부른다. 침착하고 신뢰감 있는 말투, 가끔 짧은 격려.
+- 사용자를 항상 '주인님'이라고 부른다. 정중하고 침착하며 신뢰감 있는 말투, 가끔 짧은 격려.
 - 제공된 [상태] 데이터에 없는 것은 추측하지 말고 모른다고 말한다.
 - 과속, 급가속 경쟁, 위험한 주행을 부추기지 않는다. 안전과 부드러운 주행, 전비 효율을 우선한다.
-- 전기차 코칭 관점: 일찍 감속을 시작해 회생제동에 맡기기, 일정한 속도 유지, 코너에서 부드러운 조향.`;
+- 전기차 코칭 관점: 일찍 감속을 시작해 회생제동에 맡기기, 일정한 속도 유지, 코너에서 부드러운 조향.
+- 대화는 실시간 음성으로 이어진다. 사람과 주고받듯 자연스럽게 한두 문장으로 답하고, 필요하면 짧게 되묻는다. 첫 문장에 핵심을 말한다.`;
   const DEBRIEF = `방금 주행이 끝났다. [상태]의 이번 주행 요약을 바탕으로 음성 디브리핑을 해라.
 3~4문장: 핵심 수치 한두 개, 잘한 점 하나, 다음에 개선할 점 하나. 수치 근거가 약하면 그렇다고 말한다.`;
   const history = [];
@@ -227,8 +241,8 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   async function brainAsk(text, maxTokens = 250) {
     const ctx = contextText();
-    if (!API_KEY) return "목업 모드예요, 드라이버. 설정에서 API 키를 넣어 주세요. " + ctx.split("\n")[0] + ".";
-    const messages = [...history.slice(-12), { role: "user", content: `[상태]\n${ctx}\n\n[드라이버]\n${text}` }];
+    if (!API_KEY) return "목업 모드예요, 주인님. 설정에서 API 키를 넣어 주세요. " + ctx.split("\n")[0] + ".";
+    const messages = [...history.slice(-12), { role: "user", content: `[상태]\n${ctx}\n\n[주인님]\n${text}` }];
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 20000);
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -249,13 +263,69 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     } finally { clearTimeout(to); }
   }
 
+  // 스트리밍 두뇌: 토큰이 오는 대로 화면에 표시하고, 문장이 끝날 때마다 바로 읽는다
+  let curCtrl = null, askSeq = 0;
+  async function brainStream(text, maxTokens, onDelta, onSentence) {
+    if (!API_KEY) { const m = "목업 모드예요, 주인님. 설정에서 API 키를 넣어 주세요."; onDelta(m); onSentence(m); return m; }
+    const ctx = contextText();
+    const messages = [...history.slice(-12), { role: "user", content: `[상태]\n${ctx}\n\n[주인님]\n${text}` }];
+    const ctrl = new AbortController(); curCtrl = ctrl;
+    let to = setTimeout(() => ctrl.abort(), 20000), full = "", buf = "";
+    const flush = (force) => {
+      let m;
+      while ((m = buf.match(/^[\s\S]*?[.!?。…~](?=\s)/))) { const t = m[0].trim(); buf = buf.slice(m[0].length); if (t) onSentence(t); }
+      if (force && buf.trim()) { onSentence(buf.trim()); buf = ""; }
+    };
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", signal: ctrl.signal,
+        headers: {
+          "content-type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: PERSONA, messages, stream: true }),
+      });
+      if (!r.ok) {
+        let msg = r.status; try { const j = await r.json(); msg = j?.error?.message?.slice(0, 80) || msg; } catch (_) {}
+        const e = `두뇌 연결 오류예요. ${msg}`; onDelta(e); onSentence(e); return e;
+      }
+      const reader = r.body.getReader(), dec = new TextDecoder(); let sse = "";
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        clearTimeout(to); to = setTimeout(() => ctrl.abort(), 15000);
+        sse += dec.decode(value, { stream: true });
+        let i;
+        while ((i = sse.indexOf("\n")) >= 0) {
+          const line = sse.slice(0, i).trim(); sse = sse.slice(i + 1);
+          if (!line.startsWith("data:")) continue;
+          let ev; try { ev = JSON.parse(line.slice(5)); } catch (_) { continue; }
+          if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") {
+            full += ev.delta.text; buf += ev.delta.text; onDelta(full); flush(false);
+          } else if (ev.type === "error") throw new Error((ev.error && ev.error.message) || "stream error");
+        }
+      }
+      flush(true); full = full.trim();
+      if (full) history.push({ role: "user", content: text }, { role: "assistant", content: full });
+      return full;
+    } catch (e) {
+      flush(true);
+      if (full) return full.trim();
+      const m = "지금은 두뇌 연결이 불안정해요. 통신 상태를 확인해 주세요."; onDelta(m); onSentence(m); return m;
+    } finally { clearTimeout(to); if (curCtrl === ctrl) curCtrl = null; }
+  }
+
   async function ask(text) {
-    if (thinking) return;
-    thinking = true; $("heard").textContent = "▶ " + text; $("said").textContent = "생각 중…";
-    const reply = await brainAsk(text);
+    if (thinking || !text) return;
+    thinking = true; const my = ++askSeq;
+    $("heard").textContent = "▶ " + text; $("said").textContent = "생각 중…";
+    stopSpeaking(); pauseListening();
+    const reply = await brainStream(text, 250,
+      (full) => { if (my === askSeq) $("said").textContent = full; },
+      (sentence) => { if (my === askSeq) speakChunk(sentence); });
     thinking = false;
     if (T.active) T.log.push(["chat", Date.now() / 1000, text, reply]);
-    say(reply);
+    convoTouch();
+    if (!ttsPending) resumeListening();
   }
 
   // ---------- 저장소 (IndexedDB) ----------
@@ -406,31 +476,55 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
 
   // ---------- 음성 합성 ----------
   let koVoice = null;
+  const VOICE = { name: store.get("asurada_voice"), pitch: +store.get("asurada_pitch", "0.85"), rate: +store.get("asurada_rate", "1.0") };
   function pickVoice() {
-    const vs = speechSynthesis.getVoices();
-    koVoice = vs.find((v) => v.lang === "ko-KR" && /google|yuna|premium|enhanced/i.test(v.name)) || vs.find((v) => v.lang && v.lang.startsWith("ko")) || null;
+    const vs = speechSynthesis.getVoices(), ko = vs.filter((v) => v.lang && v.lang.toLowerCase().startsWith("ko"));
+    koVoice = ko.find((v) => v.name === VOICE.name) || ko.find((v) => /google|yuna|premium|enhanced/i.test(v.name)) || ko[0] || null;
+    const sel = $("inVoice");
+    if (sel) {
+      sel.innerHTML = "";
+      (ko.length ? ko : vs).forEach((v) => { const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o); });
+      if (koVoice) sel.value = koVoice.name;
+    }
   }
   if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  // 문장 단위 큐: 스트리밍으로 들어온 문장을 끊김 없이 이어서 읽는다
+  let ttsPending = 0, ttsGen = 0;
+  function speakChunk(text) {
+    if (!text || !("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(text), gen = ttsGen;
+    u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.pitch = VOICE.pitch; u.rate = VOICE.rate;
+    ttsPending++;
+    u.onstart = () => { $("said").classList.add("speaking"); pauseListening(); };
+    u.onend = u.onerror = () => {
+      if (gen !== ttsGen) return;
+      ttsPending = Math.max(0, ttsPending - 1);
+      if (!ttsPending) { $("said").classList.remove("speaking"); if (!thinking) resumeListening(); }
+    };
+    speechSynthesis.speak(u);
+  }
+  function stopSpeaking() {
+    ttsGen++; ttsPending = 0; $("said").classList.remove("speaking");
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+  }
   function say(text, isAlert = false) {
     if (!text) return;
     $("said").textContent = text;
-    if (!("speechSynthesis" in window)) return;
-    if (!isAlert) speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.rate = 1.05;
-    u.onstart = () => { $("said").classList.add("speaking"); pauseListening(); };
-    u.onend = u.onerror = () => { $("said").classList.remove("speaking"); resumeListening(); };
-    speechSynthesis.speak(u);
+    if (!isAlert) stopSpeaking();
+    speakChunk(text);
   }
 
   // ---------- 음성 인식 ----------
+  // 모드: idle(버튼만) · wake(호출어 대기) · convo(대화 모드: 말 끝나면 바로 다시 들음) · ptt(버튼 눌러 한 번)
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, recMode = "idle", recRunning = false, awaitingUntil = 0;
+  let rec = null, recMode = "idle", recRunning = false, awaitingUntil = 0, convo = false, convoTimer = null;
+  function baseMode() { return convo ? "convo" : ($("optWake").checked ? "wake" : "idle"); }
   function makeRec(continuous) {
     const r = new SR();
     r.lang = "ko-KR"; r.interimResults = true; r.continuous = continuous;
-    r.onstart = () => { recRunning = true; S.micOk = true; sensorsLine(); };
+    r.onstart = () => { if (r !== rec) return; recRunning = true; S.micOk = true; sensorsLine(); $("btnConvo").classList.toggle("listening", recMode === "convo"); };
     r.onresult = (e) => {
+      if (r !== rec) return;
       let interim = "", final = "";
       for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) final += t; else interim += t; }
       $("heard").textContent = final || interim || "…";
@@ -438,28 +532,63 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     };
     r.onerror = (e) => { if (e.error === "not-allowed") { S.micOk = false; sensorsLine(); } };
     r.onend = () => {
-      recRunning = false; $("btnTalk").classList.remove("listening");
-      if (recMode === "ptt") recMode = $("optWake").checked ? "wake" : "idle";
-      if (recMode === "wake" && !speechSynthesis.speaking) setTimeout(startWake, 300);
+      if (r !== rec) return;
+      recRunning = false; $("btnTalk").classList.remove("listening"); $("btnConvo").classList.remove("listening");
+      if (recMode === "ptt") recMode = baseMode();
+      resumeListening();
     };
     return r;
   }
+  const STOP_RE = /^(대화\s*(끝|종료|그만)|그만(\s*(할게|하자|해))?|됐어|이제\s*됐어)$/;
   function handleUtterance(text) {
     if (recMode === "ptt") { ask(text); return; }
+    if (recMode === "convo") {
+      const clean = text.replace(/[.!?,~]/g, "").trim();
+      if (STOP_RE.test(clean)) { setConvo(false); say("대화 모드를 마칠게요, 주인님."); return; }
+      if (clean.length < 2 || thinking) return;
+      convoTouch();
+      ask(text.replace(new RegExp("^\\s*" + CFG.wakeWord + "(야|아)?[\\s,.!?~]*"), "").trim() || text);
+      return;
+    }
     if (text.replace(/\s/g, "").includes(CFG.wakeWord)) {
       const rest = text.split(CFG.wakeWord).slice(1).join(" ").replace(/^(야|아)?[\s,.!?~]*/, "").trim();
-      if (rest.length > 1) ask(rest); else { awaitingUntil = Date.now() + 8000; say("네, 드라이버.", true); }
+      if (rest.length > 1) ask(rest); else { awaitingUntil = Date.now() + 8000; say("네, 주인님.", true); }
     } else if (Date.now() < awaitingUntil) { awaitingUntil = 0; ask(text); }
   }
-  function startPTT() {
-    if (!SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
-    try { rec && rec.abort(); } catch (_) {}
-    recMode = "ptt"; rec = makeRec(false); $("btnTalk").classList.add("listening"); speechSynthesis.cancel();
+  function startListening() {
+    if (!SR || recRunning || thinking || ttsPending) return;
+    if (recMode !== "wake" && recMode !== "convo") return;
+    rec = makeRec(true);
     try { rec.start(); } catch (_) {}
   }
-  function startWake() { if (!SR || recMode !== "wake" || recRunning) return; rec = makeRec(true); try { rec.start(); } catch (_) {} }
-  function pauseListening() { if (recMode === "wake" && rec && recRunning) { try { rec.abort(); } catch (_) {} } }
-  function resumeListening() { if (recMode === "wake" && !recRunning) setTimeout(startWake, 400); }
+  function pauseListening() {
+    if ((recMode === "wake" || recMode === "convo") && rec && recRunning) { try { rec.abort(); } catch (_) {} }
+  }
+  function resumeListening() { setTimeout(startListening, 350); }
+  function startPTT() {
+    if (!SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
+    askSeq++; if (curCtrl) curCtrl.abort();   // 말하는 중이면 끊고 바로 듣기 (끼어들기)
+    stopSpeaking();
+    const old = rec; recMode = "ptt"; rec = makeRec(false); recRunning = false;
+    try { old && old.abort(); } catch (_) {}
+    $("btnTalk").classList.add("listening");
+    try { rec.start(); } catch (_) {}
+  }
+  function convoTouch() {
+    clearTimeout(convoTimer);
+    if (convo) convoTimer = setTimeout(() => { setConvo(false); say("한동안 말씀이 없어서 대화 모드를 쉴게요, 주인님.", true); }, 120000);
+  }
+  function setConvo(on) {
+    if (on && !SR) { say("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
+    convo = on;
+    $("btnConvo").classList.toggle("recording", on);
+    $("btnConvo").textContent = on ? "💬 대화 중 (끄기)" : "💬 대화 모드";
+    const old = rec; rec = null; recRunning = false;
+    try { old && old.abort(); } catch (_) {}
+    recMode = baseMode();
+    if (on) { convoTouch(); say("네, 주인님. 편하게 말씀하세요."); }
+    else { clearTimeout(convoTimer); resumeListening(); }
+  }
 
   // ---------- UI ----------
   function renderTrip() {
@@ -490,19 +619,34 @@ button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
     window.addEventListener("devicemotion", onMotion); // 거부된 경우 이벤트가 오지 않을 뿐 무해
     if (navigator.geolocation) navigator.geolocation.watchPosition(onFix, () => { S.gpsOk = false; sensorsLine(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     keepAwake(); setInterval(tick, CFG.tickMs);
-    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnStart").style.display = "none";
-    if ($("optWake").checked) { recMode = "wake"; startWake(); }
-    say(API_KEY ? "아스라다, 온라인. 준비됐어요, 드라이버." : "아스라다, 목업 모드로 시작해요. 설정에서 API 키를 넣으면 대화할 수 있어요.");
+    $("btnTalk").disabled = false; $("btnTrip").disabled = false; $("btnConvo").disabled = false; $("btnStart").style.display = "none";
+    recMode = baseMode();
+    say(API_KEY ? "아스라다, 온라인. 준비됐습니다, 주인님." : "아스라다, 목업 모드로 시작해요. 설정에서 API 키를 넣으면 대화할 수 있어요.");
   };
   $("btnTalk").onclick = startPTT;
   $("btnTrip").onclick = tripToggle;
-  $("optWake").onchange = (e) => { if (e.target.checked) { recMode = "wake"; startWake(); } else { recMode = "idle"; try { rec && rec.abort(); } catch (_) {} } };
+  $("btnConvo").onclick = () => setConvo(!convo);
+  $("optWake").onchange = () => {
+    if (convo) return;
+    const old = rec; rec = null; recRunning = false;
+    try { old && old.abort(); } catch (_) {}
+    recMode = baseMode(); resumeListening();
+  };
 
   // 설정 패널
-  $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL; renderTrips(); };
+  $("btnSettings").onclick = () => { $("panel").hidden = !$("panel").hidden; $("inKey").value = API_KEY; $("inModel").value = MODEL;
+    pickVoice(); $("inPitch").value = VOICE.pitch; $("inRate").value = VOICE.rate; voiceLabels(); renderTrips(); };
+  function voiceLabels() { $("pitchVal").textContent = (+$("inPitch").value).toFixed(2); $("rateVal").textContent = (+$("inRate").value).toFixed(2); }
+  function applyVoiceInputs() {
+    VOICE.name = $("inVoice").value; VOICE.pitch = +$("inPitch").value; VOICE.rate = +$("inRate").value;
+    const vs = speechSynthesis.getVoices(); koVoice = vs.find((v) => v.name === VOICE.name) || koVoice;
+  }
+  $("inPitch").oninput = voiceLabels; $("inRate").oninput = voiceLabels;
+  $("btnPreview").onclick = () => { applyVoiceInputs(); say("아스라다, 온라인. 준비됐습니다, 주인님."); };
   $("btnSave").onclick = () => {
     API_KEY = $("inKey").value.trim(); MODEL = $("inModel").value.trim() || "claude-sonnet-5-5";
     store.set("asurada_api_key", API_KEY); store.set("asurada_model", MODEL);
+    applyVoiceInputs(); store.set("asurada_voice", VOICE.name); store.set("asurada_pitch", String(VOICE.pitch)); store.set("asurada_rate", String(VOICE.rate));
     $("panel").hidden = true; sensorsLine(); renderTrip();
   };
   $("btnTest").onclick = async () => {
